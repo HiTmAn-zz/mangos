@@ -3841,6 +3841,10 @@ bool Unit::RemoveNoStackAurasDueToAura(Aura *Aur)
                         case 24858: if(spellId==24905)                  is_triggered_by_spell = true; break;
                         case 33891: if(spellId==5420 || spellId==34123) is_triggered_by_spell = true; break;
                         case 34551: if(spellId==22688)                  is_triggered_by_spell = true; break;
+                        case  7164: if(spellId==7376)                   is_triggered_by_spell = true; break;
+                        case    71: if(spellId==7376 || spellId==29595) is_triggered_by_spell = true; break;
+                        case  7366: if(spellId==7381)                   is_triggered_by_spell = true; break;
+                        case  2458: if(spellId==7381)                   is_triggered_by_spell = true; break;
                     }
                     break;
             }
