@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,8 +34,10 @@ static AreaFlagByAreaID sAreaFlagByAreaID;
 static AreaFlagByMapID  sAreaFlagByMapID;                   // for instances without generated *.map files
 
 DBCStorage <AreaTriggerEntry> sAreaTriggerStore(AreaTriggerEntryfmt);
+DBCStorage <AuctionHouseEntry> sAuctionHouseStore(AuctionHouseEntryfmt);
 DBCStorage <BankBagSlotPricesEntry> sBankBagSlotPricesStore(BankBagSlotPricesEntryfmt);
 DBCStorage <BattlemasterListEntry> sBattlemasterListStore(BattlemasterListEntryfmt);
+DBCStorage <CharStartOutfitEntry> sCharStartOutfitStore(CharStartOutfitEntryfmt);
 DBCStorage <CharTitlesEntry> sCharTitlesStore(CharTitlesEntryfmt);
 DBCStorage <ChatChannelsEntry> sChatChannelsStore(ChatChannelsEntryfmt);
 DBCStorage <ChrClassesEntry> sChrClassesStore(ChrClassesEntryfmt);
@@ -127,7 +129,7 @@ DBCStorage <WorldSafeLocsEntry> sWorldSafeLocsStore(WorldSafeLocsEntryfmt);
 
 typedef std::list<std::string> StoreProblemList;
 
-static bool LoadDBC_assert_print(uint32 fsize,uint32 rsize, std::string filename)
+static bool LoadDBC_assert_print(uint32 fsize,uint32 rsize, const std::string& filename)
 {
     sLog.outError("ERROR: Size of '%s' setted by format string (%u) not equal size of C++ structure (%u).",filename.c_str(),fsize,rsize);
 
@@ -136,7 +138,7 @@ static bool LoadDBC_assert_print(uint32 fsize,uint32 rsize, std::string filename
 }
 
 template<class T>
-inline void LoadDBC(uint32& availableDbcLocales,barGoLink& bar, StoreProblemList& errlist, DBCStorage<T>& storage, std::string dbc_path, std::string filename)
+inline void LoadDBC(uint32& availableDbcLocales,barGoLink& bar, StoreProblemList& errlist, DBCStorage<T>& storage, const std::string& dbc_path, const std::string& filename)
 {
     // compatibility format and C++ structure sizes
     assert(DBCFile::GetFormatRecordSize(storage.GetFormat()) == sizeof(T) || LoadDBC_assert_print(DBCFile::GetFormatRecordSize(storage.GetFormat()),sizeof(T),filename));
@@ -171,11 +173,11 @@ inline void LoadDBC(uint32& availableDbcLocales,barGoLink& bar, StoreProblemList
     }
 }
 
-void LoadDBCStores(std::string dataPath)
+void LoadDBCStores(const std::string& dataPath)
 {
     std::string dbcPath = dataPath+"dbc/";
 
-    const uint32 DBCFilesCount = 56;
+    const uint32 DBCFilesCount = 57;
 
     barGoLink bar( DBCFilesCount );
 
@@ -199,8 +201,11 @@ void LoadDBCStores(std::string dataPath)
     }
 
     LoadDBC(availableDbcLocales,bar,bad_dbc_files,sAreaTriggerStore,         dbcPath,"AreaTrigger.dbc");
+    LoadDBC(availableDbcLocales,bar,bad_dbc_files,sAuctionHouseStore,        dbcPath,"AuctionHouse.dbc");
     LoadDBC(availableDbcLocales,bar,bad_dbc_files,sBankBagSlotPricesStore,   dbcPath,"BankBagSlotPrices.dbc");
     LoadDBC(availableDbcLocales,bar,bad_dbc_files,sBattlemasterListStore,    dbcPath,"BattlemasterList.dbc");
+    LoadDBC(availableDbcLocales,bar,bad_dbc_files,sCharStartOutfitStore,     dbcPath,"CharStartOutfit.dbc");
+
     LoadDBC(availableDbcLocales,bar,bad_dbc_files,sCharTitlesStore,          dbcPath,"CharTitles.dbc");
     LoadDBC(availableDbcLocales,bar,bad_dbc_files,sChatChannelsStore,        dbcPath,"ChatChannels.dbc");
     LoadDBC(availableDbcLocales,bar,bad_dbc_files,sChrClassesStore,          dbcPath,"ChrClasses.dbc");
@@ -314,7 +319,7 @@ void LoadDBCStores(std::string dataPath)
 
     LoadDBC(availableDbcLocales,bar,bad_dbc_files,sTalentTabStore,           dbcPath,"TalentTab.dbc");
 
-    // preper fast data access to bit pos of talent ranks for use at inspecting
+    // prepare fast data access to bit pos of talent ranks for use at inspecting
     {
         // fill table by amount of talent ranks and fill sTalentTabBitSizeInInspect
         // store in with (row,col,talent)->size key for correct sorting by (row,col)
@@ -453,8 +458,7 @@ void LoadDBCStores(std::string dataPath)
     }
 
     sLog.outString();
-    sLog.outString( ">> Loaded %d data stores", DBCFilesCount );
-    sLog.outString();
+    sLog.outString( ">> Initialized %d data stores", DBCFilesCount );
 }
 
 SimpleFactionsList const* GetFactionTeamList(uint32 faction)
@@ -492,13 +496,22 @@ uint32 GetTalentSpellCost(uint32 spellId)
     return 0;
 }
 
-AreaTableEntry const* GetAreaEntryByAreaID(uint32 area_id)
+int32 GetAreaFlagByAreaID(uint32 area_id)
 {
     AreaFlagByAreaID::iterator i = sAreaFlagByAreaID.find(area_id);
     if(i == sAreaFlagByAreaID.end())
+        return -1;
+
+    return i->second;
+}
+
+AreaTableEntry const* GetAreaEntryByAreaID(uint32 area_id)
+{
+    int32 areaflag = GetAreaFlagByAreaID(area_id);
+    if(areaflag < 0)
         return NULL;
 
-    return sAreaStore.LookupEntry(i->second);
+    return sAreaStore.LookupEntry(areaflag );
 }
 
 AreaTableEntry const* GetAreaEntryByAreaFlagAndMap(uint32 area_flag,uint32 map_id)

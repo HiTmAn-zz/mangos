@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -192,7 +192,7 @@ Unit* HostilReference::getSourceUnit()
 
 void ThreatContainer::clearReferences()
 {
-    for(std::list<HostilReference*>::iterator i = iThreatList.begin(); i != iThreatList.end(); i++)
+    for(std::list<HostilReference*>::iterator i = iThreatList.begin(); i != iThreatList.end(); ++i)
     {
         (*i)->unlink();
         delete (*i);
@@ -206,7 +206,7 @@ HostilReference* ThreatContainer::getReferenceByTarget(Unit* pVictim)
 {
     HostilReference* result = NULL;
     uint64 guid = pVictim->GetGUID();
-    for(std::list<HostilReference*>::iterator i = iThreatList.begin(); i != iThreatList.end(); i++)
+    for(std::list<HostilReference*>::iterator i = iThreatList.begin(); i != iThreatList.end(); ++i)
     {
         if((*i)->getUnitGuid() == guid)
         {

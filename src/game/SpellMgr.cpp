@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 #include "World.h"
 #include "Chat.h"
 #include "Spell.h"
+#include "BattleGroundMgr.h"
 
 SpellMgr::SpellMgr()
 {
@@ -1458,7 +1459,7 @@ void SpellMgr::LoadSpellChains()
     mSpellChains.clear();                                   // need for reload case
     mSpellChainsNext.clear();                               // need for reload case
 
-    QueryResult *result = WorldDatabase.PQuery("SELECT spell_id, prev_spell, first_spell, rank, req_spell FROM spell_chain");
+    QueryResult *result = WorldDatabase.Query("SELECT spell_id, prev_spell, first_spell, rank, req_spell FROM spell_chain");
     if(result == NULL)
     {
         barGoLink bar( 1 );
@@ -1569,6 +1570,8 @@ void SpellMgr::LoadSpellChains()
         ++count;
     } while( result->NextRow() );
 
+    delete result;
+
     // additional integrity checks
     for(SpellChainMap::iterator i = mSpellChains.begin(); i != mSpellChains.end(); ++i)
     {
@@ -1617,8 +1620,6 @@ void SpellMgr::LoadSpellChains()
         }
     }
 
-    delete result;
-
     sLog.outString();
     sLog.outString( ">> Loaded %u spell chain records", count );
 }
@@ -1629,8 +1630,10 @@ void SpellMgr::LoadSpellLearnSkills()
 
     // search auto-learned skills and add its to map also for use in unlearn spells/talents
     uint32 dbc_count = 0;
+    barGoLink bar( sSpellStore.GetNumRows() );
     for(uint32 spell = 0; spell < sSpellStore.GetNumRows(); ++spell)
     {
+        bar.step();
         SpellEntry const* entry = sSpellStore.LookupEntry(spell);
 
         if(!entry)
@@ -1648,8 +1651,6 @@ void SpellMgr::LoadSpellLearnSkills()
                     dbc_node.value    = (entry->EffectBasePoints[i]+1)*75;
                 dbc_node.maxvalue = (entry->EffectBasePoints[i]+1)*75;
 
-                SpellLearnSkillNode const* db_node = GetSpellLearnSkill(spell);
-
                 mSpellLearnSkills[spell] = dbc_node;
                 ++dbc_count;
                 break;
@@ -1665,7 +1666,7 @@ void SpellMgr::LoadSpellLearnSpells()
 {
     mSpellLearnSpells.clear();                              // need for reload case
 
-    QueryResult *result = WorldDatabase.PQuery("SELECT entry, SpellID FROM spell_learn_spell");
+    QueryResult *result = WorldDatabase.Query("SELECT entry, SpellID FROM spell_learn_spell");
     if(!result)
     {
         barGoLink bar( 1 );
@@ -1725,7 +1726,15 @@ void SpellMgr::LoadSpellLearnSpells()
             {
                 SpellLearnSpellNode dbc_node;
                 dbc_node.spell       = entry->EffectTriggerSpell[i];
-                dbc_node.autoLearned = true;
+
+                // ignore learning not existed spells (broken/outdated/or generic learnig spell 483
+                if(!sSpellStore.LookupEntry(dbc_node.spell))
+                    continue;
+
+                // talent or passive spells or skill-step spells auto-casted and not need dependent learning,
+                // pet teaching spells don't must be dependent learning (casted)
+                // other required explicit dependent learning
+                dbc_node.autoLearned = entry->EffectImplicitTargetA[i]==TARGET_PET || GetTalentSpellCost(spell) > 0 || IsPassiveSpell(spell) || IsSpellHaveEffect(entry,SPELL_EFFECT_SKILL_STEP);
 
                 SpellLearnSpellMap::const_iterator db_node_begin = GetBeginSpellLearnSpell(spell);
                 SpellLearnSpellMap::const_iterator db_node_end   = GetEndSpellLearnSpell(spell);
@@ -2005,15 +2014,15 @@ bool SpellMgr::IsSpellValid(SpellEntry const* spellInfo, Player* pl, bool msg)
             }
             case SPELL_EFFECT_LEARN_SPELL:
             {
-                SpellEntry const* spellInfo2 = sSpellStore.LookupEntry(spellInfo->EffectTriggerSpell[0]);
+                SpellEntry const* spellInfo2 = sSpellStore.LookupEntry(spellInfo->EffectTriggerSpell[i]);
                 if( !IsSpellValid(spellInfo2,pl,msg) )
                 {
                     if(msg)
                     {
                         if(pl)
-                            ChatHandler(pl).PSendSysMessage("Spell %u learn to broken spell %u, and then...",spellInfo->Id,spellInfo->EffectTriggerSpell[0]);
+                            ChatHandler(pl).PSendSysMessage("Spell %u learn to broken spell %u, and then...",spellInfo->Id,spellInfo->EffectTriggerSpell[i]);
                         else
-                            sLog.outErrorDb("Spell %u learn to invalid spell %u, and then...",spellInfo->Id,spellInfo->EffectTriggerSpell[0]);
+                            sLog.outErrorDb("Spell %u learn to invalid spell %u, and then...",spellInfo->Id,spellInfo->EffectTriggerSpell[i]);
                     }
                     return false;
                 }
@@ -2043,84 +2052,144 @@ bool SpellMgr::IsSpellValid(SpellEntry const* spellInfo, Player* pl, bool msg)
     return true;
 }
 
-bool IsSpellAllowedInLocation(SpellEntry const *spellInfo,uint32 map_id,uint32 zone_id,uint32 area_id)
+uint8 GetSpellAllowedInLocationError(SpellEntry const *spellInfo,uint32 map_id,uint32 zone_id,uint32 area_id, uint32 bgInstanceId)
 {
     // normal case
-    if( spellInfo->AreaId && spellInfo->AreaId != zone_id && spellInfo->AreaId != area_id )
-        return false;
+    if( spellInfo->AreaId > 0 && spellInfo->AreaId != zone_id && spellInfo->AreaId != area_id )
+        return SPELL_FAILED_REQUIRES_AREA;
 
     // elixirs (all area dependent elixirs have family SPELLFAMILY_POTION, use this for speedup)
     if(spellInfo->SpellFamilyName==SPELLFAMILY_POTION)
     {
         if(uint32 mask = spellmgr.GetSpellElixirMask(spellInfo->Id))
         {
+            if(mask & ELIXIR_BATTLE_MASK)
+            {
+                if(spellInfo->Id==45373)                    // Bloodberry Elixir
+                    return zone_id==4075 ? 0 : SPELL_FAILED_REQUIRES_AREA;
+            }
             if(mask & ELIXIR_UNSTABLE_MASK)
             {
                 // in the Blade's Edge Mountains Plateaus and Gruul's Lair.
-                return zone_id ==3522 || map_id==565;
+                return zone_id ==3522 || map_id==565 ? 0 : SPELL_FAILED_REQUIRES_AREA;
             }
             if(mask & ELIXIR_SHATTRATH_MASK)
             {
-                // in Tempest Keep, Serpentshrine Cavern, Caverns of Time: Mount Hyjal, Black Temple
-                // TODO: and the Sunwell Plateau
-                if(zone_id ==3607 || map_id==534 || map_id==564)
-                    return true;
+                // in Tempest Keep, Serpentshrine Cavern, Caverns of Time: Mount Hyjal, Black Temple, Sunwell Plateau
+                if(zone_id ==3607 || map_id==534 || map_id==564 || zone_id==4075)
+                    return 0;
 
                 MapEntry const* mapEntry = sMapStore.LookupEntry(map_id);
                 if(!mapEntry)
-                    return false;
+                    return SPELL_FAILED_REQUIRES_AREA;
 
-                return mapEntry->multimap_id==206;
+                return mapEntry->multimap_id==206 ? 0 : SPELL_FAILED_REQUIRES_AREA;
             }
 
             // elixirs not have another limitations
-            return true;
+            return 0;
         }
     }
 
     // special cases zone check (maps checked by multimap common id)
     switch(spellInfo->Id)
     {
-        case 41618:
-        case 41620:
+        case 41618:                                         // Bottled Nethergon Energy
+        case 41620:                                         // Bottled Nethergon Vapor
         {
             MapEntry const* mapEntry = sMapStore.LookupEntry(map_id);
             if(!mapEntry)
-                return false;
+                return SPELL_FAILED_REQUIRES_AREA;
 
-            return mapEntry->multimap_id==206;
+            return mapEntry->multimap_id==206 ? 0 : SPELL_FAILED_REQUIRES_AREA;
         }
-
-        case 41617:
-        case 41619:
+        case 41617:                                         // Cenarion Mana Salve
+        case 41619:                                         // Cenarion Healing Salve
         {
             MapEntry const* mapEntry = sMapStore.LookupEntry(map_id);
             if(!mapEntry)
-                return false;
+                return SPELL_FAILED_REQUIRES_AREA;
 
-            return mapEntry->multimap_id==207;
+            return mapEntry->multimap_id==207 ? 0 : SPELL_FAILED_REQUIRES_AREA;
         }
-        // Dragonmaw Illusion
-        case 40216:
-        case 42016:
+        case 40216:                                         // Dragonmaw Illusion
+        case 42016:                                         // Dragonmaw Illusion
+            return area_id == 3759 || area_id == 3966 || area_id == 3939 ? 0 : SPELL_FAILED_REQUIRES_AREA;
+        case 23333:                                         // Warsong Flag
+        case 23335:                                         // Silverwing Flag
+            return map_id == 489 && bgInstanceId ? 0 : SPELL_FAILED_REQUIRES_AREA;
+        case 34976:                                         // Netherstorm Flag
+            return map_id == 566 && bgInstanceId ? 0 : SPELL_FAILED_REQUIRES_AREA;
+        case 2584:                                          // Waiting to Resurrect
+        case 22011:                                         // Spirit Heal Channel
+        case 22012:                                         // Spirit Heal
+        case 24171:                                         // Resurrection Impact Visual
+        case 42792:                                         // Recently Dropped Flag
+        case 43681:                                         // Inactive
+        case 44535:                                         // Spirit Heal (mana)
         {
-            if ( area_id != 3759 && area_id != 3966 && area_id != 3939 )
-                return false;
-            break;
+            MapEntry const* mapEntry = sMapStore.LookupEntry(map_id);
+            if(!mapEntry)
+                return SPELL_FAILED_REQUIRES_AREA;
+
+            return mapEntry->IsBattleGround() && bgInstanceId ? 0 : SPELL_FAILED_REQUIRES_AREA;
+        }
+        case 44521:                                         // Preparation
+        {
+            if(!bgInstanceId)
+                return SPELL_FAILED_REQUIRES_AREA;
+
+            MapEntry const* mapEntry = sMapStore.LookupEntry(map_id);
+            if(!mapEntry)
+                return SPELL_FAILED_REQUIRES_AREA;
+
+            if(!mapEntry->IsBattleGround())
+                return SPELL_FAILED_REQUIRES_AREA;
+
+            BattleGround* bg = sBattleGroundMgr.GetBattleGround(bgInstanceId);
+            return bg && bg->GetStatus()==STATUS_WAIT_JOIN ? 0 : SPELL_FAILED_REQUIRES_AREA;
+        }
+        case 32724:                                         // Gold Team (Alliance)
+        case 32725:                                         // Green Team (Alliance)
+        case 35774:                                         // Gold Team (Horde)
+        case 35775:                                         // Green Team (Horde)
+        {
+            MapEntry const* mapEntry = sMapStore.LookupEntry(map_id);
+            if(!mapEntry)
+                return SPELL_FAILED_REQUIRES_AREA;
+
+            return mapEntry->IsBattleArena() && bgInstanceId ? 0 : SPELL_FAILED_REQUIRES_AREA;
+        }
+        case 32727:                                         // Arena Preparation
+        {
+            if(!bgInstanceId)
+                return SPELL_FAILED_REQUIRES_AREA;
+
+            MapEntry const* mapEntry = sMapStore.LookupEntry(map_id);
+            if(!mapEntry)
+                return SPELL_FAILED_REQUIRES_AREA;
+
+            if(!mapEntry->IsBattleArena())
+                return SPELL_FAILED_REQUIRES_AREA;
+
+            BattleGround* bg = sBattleGroundMgr.GetBattleGround(bgInstanceId);
+            return bg && bg->GetStatus()==STATUS_WAIT_JOIN ? 0 : SPELL_FAILED_REQUIRES_AREA;
         }
     }
 
-    return true;
+    return 0;
 }
 
 void SpellMgr::LoadSkillLineAbilityMap()
 {
     mSkillLineAbilityMap.clear();
 
+    barGoLink bar( sSkillLineAbilityStore.GetNumRows() );
     uint32 count = 0;
 
     for (uint32 i = 0; i < sSkillLineAbilityStore.GetNumRows(); i++)
     {
+        bar.step();
         SkillLineAbilityEntry const *SkillInfo = sSkillLineAbilityStore.LookupEntry(i);
         if(!SkillInfo)
             continue;
@@ -2130,7 +2199,7 @@ void SpellMgr::LoadSkillLineAbilityMap()
     }
 
     sLog.outString();
-    sLog.outString(">> Loaded %u SkillLineAbility MultiMap", count);
+    sLog.outString(">> Loaded %u SkillLineAbility MultiMap Data", count);
 }
 
 DiminishingGroup GetDiminishingReturnsGroupForSpell(SpellEntry const* spellproto, bool triggered)

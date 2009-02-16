@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 #include "Database/DBCStructure.h"
 #include "Database/SQLStorage.h"
 
-#include "Utilities/HashMap.h"
+#include "Utilities/UnorderedMap.h"
 #include <map>
 
 class Player;
@@ -323,7 +323,7 @@ bool IsPositiveTarget(uint32 targetA, uint32 targetB);
 bool IsSingleTargetSpell(SpellEntry const *spellInfo);
 bool IsSingleTargetSpells(SpellEntry const *spellInfo1, SpellEntry const *spellInfo2);
 
-bool IsSpellAllowedInLocation(SpellEntry const *spellInfo,uint32 map_id,uint32 zone_id,uint32 area_id);
+uint8 GetSpellAllowedInLocationError(SpellEntry const *spellInfo,uint32 map_id,uint32 zone_id,uint32 area_id,uint32 bgInstanceId);
 
 inline bool IsAreaEffectTarget( Targets target )
 {
@@ -488,7 +488,7 @@ struct SpellProcEventEntry
     uint32      cooldown;                                   // hidden cooldown used for some spell proc events, applied to _triggered_spell_
 };
 
-typedef HM_NAMESPACE::hash_map<uint32, SpellProcEventEntry> SpellProcEventMap;
+typedef UNORDERED_MAP<uint32, SpellProcEventEntry> SpellProcEventMap;
 
 #define ELIXIR_BATTLE_MASK    0x1
 #define ELIXIR_GUARDIAN_MASK  0x2
@@ -527,7 +527,7 @@ struct SpellTargetPosition
     float  target_Orientation;
 };
 
-typedef HM_NAMESPACE::hash_map<uint32, SpellTargetPosition> SpellTargetPositionMap;
+typedef UNORDERED_MAP<uint32, SpellTargetPosition> SpellTargetPositionMap;
 
 // Spell pet auras
 class PetAura
@@ -590,7 +590,7 @@ struct SpellChainNode
     uint8  rank;
 };
 
-typedef HM_NAMESPACE::hash_map<uint32, SpellChainNode> SpellChainMap;
+typedef UNORDERED_MAP<uint32, SpellChainNode> SpellChainMap;
 typedef std::multimap<uint32, uint32> SpellChainMapNext;
 
 // Spell learning properties (accessed using SpellMgr functions)
@@ -637,7 +637,7 @@ class SpellMgr
         SpellMgr();
         ~SpellMgr();
 
-        // Accessors (const or static functions)
+    // Accessors (const or static functions)
     public:
         // Spell affects
         uint64 GetSpellAffectMask(uint16 spellId, uint8 effectId) const
@@ -828,7 +828,7 @@ class SpellMgr
                 return NULL;
         }
 
-        // Modifiers
+    // Modifiers
     public:
         static SpellMgr& Instance();
 

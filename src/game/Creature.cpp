@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@
 #include "SpellAuras.h"
 #include "WaypointMovementGenerator.h"
 #include "InstanceData.h"
-#include "BattleGround.h"
+#include "BattleGroundMgr.h"
 #include "Util.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
@@ -46,18 +46,11 @@
 // apply implementation of the singletons
 #include "Policies/SingletonImp.h"
 
-void TrainerSpellData::Clear()
-{
-    for (TrainerSpellList::iterator itr = spellList.begin(); itr != spellList.end(); ++itr)
-        delete (*itr);
-    spellList.empty();
-}
-
 TrainerSpell const* TrainerSpellData::Find(uint32 spell_id) const
 {
-    for(TrainerSpellList::const_iterator itr = spellList.begin(); itr != spellList.end(); ++itr)
-        if((*itr)->spell == spell_id)
-            return *itr;
+    TrainerSpellMap::const_iterator itr = spellList.find(spell_id);
+    if (itr != spellList.end())
+        return &itr->second;
 
     return NULL;
 }
@@ -91,6 +84,27 @@ VendorItem const* VendorItemData::FindItem(uint32 item_id) const
     return NULL;
 }
 
+bool AssistDelayEvent::Execute(uint64 /*e_time*/, uint32 /*p_time*/)
+{
+    Unit* victim = Unit::GetUnit(m_owner, m_victim);
+    if (victim)
+    {
+        while (!m_assistants.empty())
+        {
+            Creature* assistant = (Creature*)Unit::GetUnit(m_owner, *m_assistants.begin());
+            m_assistants.pop_front();
+
+            if (assistant && assistant->CanAssistTo(&m_owner, victim))
+            {
+                assistant->SetNoCallAssistance(true);
+                if(assistant->AI())
+                    assistant->AI()->AttackStart(victim);
+            }
+        }
+    }
+    return true;
+}
+
 Creature::Creature() :
 Unit(), i_AI(NULL),
 lootForPickPocketed(false), lootForBody(false), m_groupLootTimer(0), lootingGroupLeaderGUID(0),
@@ -98,7 +112,7 @@ m_lootMoney(0), m_lootRecipient(0),
 m_deathTimer(0), m_respawnTime(0), m_respawnDelay(25), m_corpseDelay(60), m_respawnradius(0.0f),
 m_gossipOptionLoaded(false), m_emoteState(0), m_isPet(false), m_isTotem(false),
 m_regenTimer(2000), m_defaultMovementType(IDLE_MOTION_TYPE), m_equipmentId(0),
-m_AlreadyCallAssistence(false), m_regenHealth(true), m_AI_locked(false), m_isDeadByDefault(false),
+m_AlreadyCallAssistance(false), m_regenHealth(true), m_AI_locked(false), m_isDeadByDefault(false),
 m_meleeDamageSchoolMask(SPELL_SCHOOL_MASK_NORMAL),m_creatureInfo(NULL), m_DBTableGuid(0)
 {
     m_valuesCount = UNIT_END;
@@ -149,7 +163,7 @@ void Creature::RemoveCorpse()
 
     float x,y,z,o;
     GetRespawnCoord(x, y, z, &o);
-    MapManager::Instance().GetMap(GetMapId(), this)->CreatureRelocation(this,x,y,z,o);
+    GetMap()->CreatureRelocation(this,x,y,z,o);
 }
 
 /**
@@ -300,11 +314,11 @@ void Creature::Update(uint32 diff)
     switch( m_deathState )
     {
         case JUST_ALIVED:
-            // Dont must be called, see Creature::setDeathState JUST_ALIVED -> ALIVE promoting.
+            // Don't must be called, see Creature::setDeathState JUST_ALIVED -> ALIVE promoting.
             sLog.outError("Creature (GUIDLow: %u Entry: %u ) in wrong state: JUST_ALIVED (4)",GetGUIDLow(),GetEntry());
             break;
         case JUST_DIED:
-            // Dont must be called, see Creature::setDeathState JUST_DIED -> CORPSE promoting.
+            // Don't must be called, see Creature::setDeathState JUST_DIED -> CORPSE promoting.
             sLog.outError("Creature (GUIDLow: %u Entry: %u ) in wrong state: JUST_DEAD (1)",GetGUIDLow(),GetEntry());
             break;
         case DEAD:
@@ -337,7 +351,7 @@ void Creature::Update(uint32 diff)
                 //Call AI respawn virtual function
                 i_AI->JustRespawned();
 
-                MapManager::Instance().GetMap(GetMapId(), this)->Add(this);
+                GetMap()->Add(this);
             }
             break;
         }
@@ -425,6 +439,11 @@ void Creature::Update(uint32 diff)
             m_regenTimer = 2000;
             break;
         }
+        case DEAD_FALLING:
+        {
+            if (!FallGround())
+                setDeathState(JUST_DIED);
+        }
         default:
             break;
     }
@@ -470,7 +489,7 @@ void Creature::RegenerateHealth()
 
     uint32 addvalue = 0;
 
-    // Not only pet, but any controelled creature
+    // Not only pet, but any controlled creature
     if(GetCharmerOrOwnerGUID())
     {
         float HealthIncreaseRate = sWorld.getRate(RATE_HEALTH);
@@ -624,12 +643,12 @@ bool Creature::isCanTrainingOf(Player* pPlayer, bool msg) const
     return true;
 }
 
-bool Creature::isCanIneractWithBattleMaster(Player* pPlayer, bool msg) const
+bool Creature::isCanInteractWithBattleMaster(Player* pPlayer, bool msg) const
 {
     if(!isBattleMaster())
         return false;
 
-    uint32 bgTypeId = objmgr.GetBattleMasterBG(GetEntry());
+    BattleGroundTypeId bgTypeId = sBattleGroundMgr.GetBattleMasterBG(GetEntry());
     if(!msg)
         return pPlayer->GetBGAccessByLevel(bgTypeId);
 
@@ -668,7 +687,7 @@ void Creature::prepareGossipMenu( Player *pPlayer,uint32 gossipid )
     // lazy loading single time at use
     LoadGossipOptions();
 
-    for( GossipOptionList::iterator i = m_goptions.begin( ); i != m_goptions.end( ); i++ )
+    for( GossipOptionList::iterator i = m_goptions.begin( ); i != m_goptions.end( ); ++i )
     {
         GossipOption* gso=&*i;
         if(gso->GossipId == gossipid)
@@ -677,7 +696,7 @@ void Creature::prepareGossipMenu( Player *pPlayer,uint32 gossipid )
             if(gso->Id==1)
             {
                 uint32 textid=GetNpcTextId();
-                GossipText * gossiptext=objmgr.GetGossipText(textid);
+                GossipText const* gossiptext=objmgr.GetGossipText(textid);
                 if(!gossiptext)
                     cantalking=false;
             }
@@ -726,7 +745,7 @@ void Creature::prepareGossipMenu( Player *pPlayer,uint32 gossipid )
                             return;
                         break;
                     case GOSSIP_OPTION_BATTLEFIELD:
-                        if(!isCanIneractWithBattleMaster(pPlayer,false))
+                        if(!isCanInteractWithBattleMaster(pPlayer,false))
                             cantalking=false;
                         break;
                     case GOSSIP_OPTION_SPIRITGUIDE:
@@ -774,7 +793,7 @@ void Creature::prepareGossipMenu( Player *pPlayer,uint32 gossipid )
         }
         if(HasFlag(UNIT_NPC_FLAGS,UNIT_NPC_FLAG_BATTLEMASTER))
         {
-            isCanIneractWithBattleMaster(pPlayer,true);     // output error message if need
+            isCanInteractWithBattleMaster(pPlayer,true);     // output error message if need
         }
     }
 }
@@ -784,17 +803,15 @@ void Creature::sendPreparedGossip(Player* player)
     if(!player)
         return;
 
-    GossipMenu& gossipmenu = player->PlayerTalkClass->GetGossipMenu();
-
-    // in case empty gossip menu open quest menu if any
-    if (gossipmenu.Empty() && GetNpcTextId() == 0)
+    // in case no gossip flag and quest menu not empty, open quest menu (client expect gossip menu with this flag)
+    if (!HasFlag(UNIT_NPC_FLAGS,UNIT_NPC_FLAG_GOSSIP) && !player->PlayerTalkClass->GetQuestMenu().Empty())
     {
         player->SendPreparedQuest(GetGUID());
         return;
     }
 
     // in case non empty gossip menu (that not included quests list size) show it
-    // (quest entries from quest menu wiill be included in list)
+    // (quest entries from quest menu will be included in list)
     player->PlayerTalkClass->SendGossipMenu(GetNpcTextId(), GetGUID());
 }
 
@@ -818,18 +835,20 @@ void Creature::OnGossipSelect(Player* player, uint32 option)
             return;
     }
 
-    uint32 textid=GetGossipTextId( action, zoneid);
-    if(textid==0)
-        textid=GetNpcTextId();
-
     switch (gossip->Action)
     {
         case GOSSIP_OPTION_GOSSIP:
+        {
+            uint32 textid = GetGossipTextId(action, zoneid);
+            if (textid == 0)
+                textid=GetNpcTextId();
+
             player->PlayerTalkClass->CloseGossip();
-            player->PlayerTalkClass->SendTalking( textid );
+            player->PlayerTalkClass->SendTalking(textid);
             break;
+        }
         case GOSSIP_OPTION_SPIRITHEALER:
-            if( player->isDead() )
+            if (player->isDead())
                 CastSpell(this,17251,true,NULL,NULL,player->GetGUID());
             break;
         case GOSSIP_OPTION_QUESTGIVER:
@@ -883,7 +902,7 @@ void Creature::OnGossipSelect(Player* player, uint32 option)
             break;
         case GOSSIP_OPTION_BATTLEFIELD:
         {
-            uint32 bgTypeId = objmgr.GetBattleMasterBG(GetEntry());
+            BattleGroundTypeId bgTypeId = sBattleGroundMgr.GetBattleMasterBG(GetEntry());
             player->GetSession()->SendBattlegGroundList( GetGUID(), bgTypeId );
             break;
         }
@@ -898,44 +917,7 @@ void Creature::OnPoiSelect(Player* player, GossipOption const *gossip)
 {
     if(gossip->GossipId==GOSSIP_GUARD_SPELLTRAINER || gossip->GossipId==GOSSIP_GUARD_SKILLTRAINER)
     {
-        //float x,y;
-        //bool findnpc=false;
         Poi_Icon icon = ICON_POI_0;
-        //QueryResult *result;
-        //Field *fields;
-        uint32 mapid=GetMapId();
-        Map const* map=MapManager::Instance().GetBaseMap( mapid );
-        uint16 areaflag=map->GetAreaFlag(GetPositionX(),GetPositionY());
-        uint32 zoneid=Map::GetZoneId(areaflag,mapid);
-        std::string areaname= gossip->OptionText;
-        /*
-        uint16 pflag;
-
-        // use the action relate to creaturetemplate.trainer_type ?
-        result= WorldDatabase.PQuery("SELECT creature.position_x,creature.position_y FROM creature,creature_template WHERE creature.map = '%u' AND creature.id = creature_template.entry AND creature_template.trainer_type = '%u'", mapid, gossip->Action );
-        if(!result)
-            return;
-        do
-        {
-            fields = result->Fetch();
-            x=fields[0].GetFloat();
-            y=fields[1].GetFloat();
-            pflag=map->GetAreaFlag(GetPositionX(),GetPositionY());
-            if(pflag==areaflag)
-            {
-                findnpc=true;
-                break;
-            }
-        }while(result->NextRow());
-
-        delete result;
-
-        if(!findnpc)
-        {
-            player->PlayerTalkClass->SendTalking( "$NSorry", "Here no this person.");
-            return;
-        }*/
-
         //need add more case.
         switch(gossip->Action)
         {
@@ -952,8 +934,9 @@ void Creature::OnPoiSelect(Player* player, GossipOption const *gossip)
                 icon=ICON_POI_TOWER;
                 break;
         }
-        uint32 textid=GetGossipTextId( gossip->Action, zoneid );
-        player->PlayerTalkClass->SendTalking( textid );
+        uint32 textid = GetGossipTextId( gossip->Action, GetZoneId() );
+        player->PlayerTalkClass->SendTalking(textid);
+        // std::string areaname= gossip->OptionText;
         // how this could worked player->PlayerTalkClass->SendPointOfInterest( x, y, icon, 2, 15, areaname.c_str() );
     }
 }
@@ -986,7 +969,7 @@ uint32 Creature::GetNpcTextId()
 
 GossipOption const* Creature::GetGossipOption( uint32 id ) const
 {
-    for( GossipOptionList::const_iterator i = m_goptions.begin( ); i != m_goptions.end( ); i++ )
+    for( GossipOptionList::const_iterator i = m_goptions.begin( ); i != m_goptions.end( ); ++i )
     {
         if(i->Action==id )
             return &*i;
@@ -1062,7 +1045,7 @@ void Creature::SetLootRecipient(Unit *unit)
 void Creature::SaveToDB()
 {
     // this should only be used when the creature has already been loaded
-    // perferably after adding to map, because mapid may not be valid otherwise
+    // preferably after adding to map, because mapid may not be valid otherwise
     CreatureData const *data = objmgr.GetCreatureData(m_DBTableGuid);
     if(!data)
     {
@@ -1317,7 +1300,15 @@ bool Creature::LoadFromDB(uint32 guid, Map *map)
 
     m_respawnTime  = objmgr.GetCreatureRespawnTime(m_DBTableGuid,GetInstanceId());
     if(m_respawnTime > time(NULL))                          // not ready to respawn
+    {
         m_deathState = DEAD;
+        if(canFly())
+        {
+            float tz = GetMap()->GetHeight(data->posX,data->posY,data->posZ,false);
+            if(data->posZ - tz > 0.1)
+                Relocate(data->posX,data->posY,tz);
+        }
+    }
     else if(m_respawnTime)                                  // respawn time set but expired
     {
         m_respawnTime = 0;
@@ -1434,7 +1425,7 @@ float Creature::GetAttackDistance(Unit const* pl) const
     // "The aggro radius of a mob having the same level as the player is roughly 20 yards"
     float RetDistance = 20;
 
-    // "Aggro Radius varries with level difference at a rate of roughly 1 yard/level"
+    // "Aggro Radius varies with level difference at a rate of roughly 1 yard/level"
     // radius grow if playlevel < creaturelevel
     RetDistance -= (float)leveldif;
 
@@ -1464,6 +1455,9 @@ void Creature::setDeathState(DeathState s)
         if(sWorld.getConfig(CONFIG_SAVE_RESPAWN_TIME_IMMEDIATLY) || isWorldBoss())
             SaveRespawnTime();
 
+        if (canFly() && FallGround())
+            return;
+
         if(!IsStopped())
             StopMoving();
     }
@@ -1477,6 +1471,9 @@ void Creature::setDeathState(DeathState s)
         if(!isPet() && GetCreatureInfo()->SkinLootId)
             if ( LootTemplates_Skinning.HaveLootFor(GetCreatureInfo()->SkinLootId) )
                 SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE);
+
+        if (canFly() && FallGround())
+            return;
 
         Unit::setDeathState(CORPSE);
     }
@@ -1495,6 +1492,25 @@ void Creature::setDeathState(DeathState s)
         SetMeleeDamageSchool(SpellSchools(cinfo->dmgschool));
         LoadCreaturesAddon(true);
     }
+}
+
+bool Creature::FallGround()
+{
+    // Let's abort after we called this function one time
+    if (getDeathState() == DEAD_FALLING)
+        return false;
+
+    // Let's do with no vmap because no way to get far distance with vmap high call
+    float tz = GetMap()->GetHeight(GetPositionX(), GetPositionY(), GetPositionZ(), false);
+
+    // Abort too if the ground is very near
+    if (fabs(GetPositionZ() - tz) < 0.1f)
+        return false;
+
+    Unit::setDeathState(DEAD_FALLING);
+    GetMotionMaster()->MovePoint(0, GetPositionX(), GetPositionY(), tz);
+    Relocate(GetPositionX(), GetPositionY(), tz);
+    return true;
 }
 
 void Creature::Respawn()
@@ -1661,13 +1677,13 @@ bool Creature::IsVisibleInGridForPlayer(Player* pl) const
     return false;
 }
 
-void Creature::CallAssistence()
+void Creature::CallAssistance()
 {
-    if( !m_AlreadyCallAssistence && getVictim() && !isPet() && !isCharmed())
+    if( !m_AlreadyCallAssistance && getVictim() && !isPet() && !isCharmed())
     {
-        SetNoCallAssistence(true);
+        SetNoCallAssistance(true);
 
-        float radius = sWorld.getConfig(CONFIG_CREATURE_FAMILY_ASSISTEMCE_RADIUS);
+        float radius = sWorld.getConfig(CONFIG_CREATURE_FAMILY_ASSISTANCE_RADIUS);
         if(radius > 0)
         {
             std::list<Creature*> assistList;
@@ -1684,17 +1700,47 @@ void Creature::CallAssistence()
                 TypeContainerVisitor<MaNGOS::CreatureListSearcher<MaNGOS::AnyAssistCreatureInRangeCheck>, GridTypeMapContainer >  grid_creature_searcher(searcher);
 
                 CellLock<GridReadGuard> cell_lock(cell, p);
-                cell_lock->Visit(cell_lock, grid_creature_searcher, *MapManager::Instance().GetMap(GetMapId(), this));
+                cell_lock->Visit(cell_lock, grid_creature_searcher, *GetMap());
             }
 
-            for(std::list<Creature*>::iterator iter = assistList.begin(); iter != assistList.end(); ++iter)
+            if (!assistList.empty())
             {
-                (*iter)->SetNoCallAssistence(true);
-                if((*iter)->AI())
-                    (*iter)->AI()->AttackStart(getVictim());
+                AssistDelayEvent *e = new AssistDelayEvent(getVictim()->GetGUID(), *this);
+                while (!assistList.empty())
+                {
+                    // Pushing guids because in delay can happen some creature gets despawned => invalid pointer
+                    e->AddAssistant((*assistList.begin())->GetGUID());
+                    assistList.pop_front();
+                }
+                m_Events.AddEvent(e, m_Events.CalculateTime(sWorld.getConfig(CONFIG_CREATURE_FAMILY_ASSISTANCE_DELAY)));
             }
         }
     }
+}
+
+bool Creature::CanAssistTo(const Unit* u, const Unit* enemy) const
+{
+    // we don't need help from zombies :)
+    if( !isAlive() )
+        return false;
+
+    // skip fighting creature
+    if( isInCombat() )
+        return false;
+
+    // only from same creature faction
+    if(getFaction() != u->getFaction() )
+        return false;
+
+    // only free creature
+    if( GetCharmerOrOwnerGUID() )
+        return false;
+
+    // skip non hostile to caster enemy creatures
+    if( !IsHostileTo(enemy) )
+        return false;
+
+    return true;
 }
 
 void Creature::SaveRespawnTime()
@@ -1722,14 +1768,14 @@ bool Creature::IsOutOfThreatArea(Unit* pVictim) const
     if(!pVictim->isInAccessablePlaceFor(this))
         return true;
 
-    if(sMapStore.LookupEntry(GetMapId())->Instanceable())
+    if(sMapStore.LookupEntry(GetMapId())->IsDungeon())
         return false;
 
     float length = pVictim->GetDistance(CombatStartX,CombatStartY,CombatStartZ);
     float AttackDist = GetAttackDistance(pVictim);
     uint32 ThreatRadius = sWorld.getConfig(CONFIG_THREAT_RADIUS);
 
-    //Use AttackDistance in distance check if threat radius is lower. This prevents creature bounce in and ouf of combat every update tick.
+    //Use AttackDistance in distance check if threat radius is lower. This prevents creature bounce in and out of combat every update tick.
     return ( length > (ThreatRadius > AttackDist ? ThreatRadius : AttackDist));
 }
 
@@ -1798,7 +1844,7 @@ bool Creature::LoadCreaturesAddon(bool reload)
     return true;
 }
 
-/// Send a message to LocalDefense channel for players oposition team in the zone
+/// Send a message to LocalDefense channel for players opposition team in the zone
 void Creature::SendZoneUnderAttackMessage(Player* attacker)
 {
     uint32 enemy_team = attacker->GetTeam();
@@ -1940,9 +1986,14 @@ uint32 Creature::getLevelForTarget( Unit const* target ) const
     return level;
 }
 
-char const* Creature::GetScriptName() const
+std::string Creature::GetScriptName()
 {
-    return ObjectMgr::GetCreatureTemplate(GetEntry())->ScriptName;
+    return objmgr.GetScriptName(GetScriptId());
+}
+
+uint32 Creature::GetScriptId()
+{
+    return ObjectMgr::GetCreatureTemplate(GetEntry())->ScriptID;
 }
 
 VendorItemData const* Creature::GetVendorItems() const
@@ -2025,4 +2076,20 @@ uint32 Creature::UpdateVendorItemCurrentCount(VendorItem const* vItem, uint32 us
 TrainerSpellData const* Creature::GetTrainerSpells() const
 {
     return objmgr.GetNpcTrainerSpells(GetEntry());
+}
+
+// overwrite WorldObject function for proper name localization
+const char* Creature::GetNameForLocaleIdx(int32 loc_idx) const
+{
+    if (loc_idx >= 0)
+    {
+        CreatureLocale const *cl = objmgr.GetCreatureLocale(GetEntry());
+        if (cl)
+        {
+            if (cl->Name.size() > loc_idx && !cl->Name[loc_idx].empty())
+                return cl->Name[loc_idx].c_str();
+        }
+    }
+
+    return GetName();
 }

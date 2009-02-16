@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ WorldSession::WorldSession(uint32 id, WorldSocket *sock, uint32 sec, uint8 expan
 LookingForGroup_auto_join(false), LookingForGroup_auto_add(false), m_muteTime(mute_time),
 _player(NULL), m_Socket(sock),_security(sec), _accountId(id), m_expansion(expansion),
 m_sessionDbcLocale(sWorld.GetAvailableDbcLocale(locale)), m_sessionDbLocaleIndex(objmgr.GetIndexForLocale(locale)),
-_logoutTime(0), m_playerLoading(false), m_playerLogout(false), m_playerRecentlyLogout(false), m_latency(0)
+_logoutTime(0), m_inQueue(false), m_playerLoading(false), m_playerLogout(false), m_playerRecentlyLogout(false), m_latency(0)
 {
     if (sock)
     {
@@ -153,20 +153,11 @@ void WorldSession::logUnexpectedOpcode(WorldPacket* packet, const char *reason)
 /// Update the WorldSession (triggered by World update)
 bool WorldSession::Update(uint32 /*diff*/)
 {
-    if (m_Socket && m_Socket->IsClosed ())
-    {
-        m_Socket->RemoveReference ();
-        m_Socket = NULL;
-    }
-
-    WorldPacket *packet;
-
     ///- Retrieve packets from the receive queue and call the appropriate handlers
-    /// \todo Is there a way to consolidate the OpcondeHandlerTable and the g_worldOpcodeNames to only maintain 1 list?
-    /// answer : there is a way, but this is better, because it would use redundant RAM
-    while (!_recvQueue.empty())
+    /// not proccess packets if socket already closed
+    while (!_recvQueue.empty() && m_Socket && !m_Socket->IsClosed ())
     {
-        packet = _recvQueue.next();
+        WorldPacket *packet = _recvQueue.next();
 
         /*#if 1
         sLog.outError( "MOEP: %s (0x%.4X)",
@@ -205,6 +196,13 @@ bool WorldSession::Update(uint32 /*diff*/)
                         (this->*opHandle.handler)(*packet);
                     break;
                 case STATUS_AUTHED:
+                    // prevent cheating with skip queue wait
+                    if(m_inQueue)
+                    {
+                        logUnexpectedOpcode(packet, "the player not pass queue yet");
+                        break;
+                    }
+
                     m_playerRecentlyLogout = false;
                     (this->*opHandle.handler)(*packet);
                     break;
@@ -217,6 +215,13 @@ bool WorldSession::Update(uint32 /*diff*/)
         }
 
         delete packet;
+    }
+
+    ///- Cleanup socket pointer if need
+    if (m_Socket && m_Socket->IsClosed ())
+    {
+        m_Socket->RemoveReference ();
+        m_Socket = NULL;
     }
 
     ///- If necessary, log the player out
@@ -302,6 +307,10 @@ void WorldSession::LogoutPlayer(bool Save)
         if(_player->InBattleGround())
             _player->LeaveBattleground();
 
+        ///- Teleport to home if the player is in an invalid instance
+        if(!_player->m_InstanceValid && !_player->isGameMaster())
+            _player->TeleportTo(_player->m_homebindMapId, _player->m_homebindX, _player->m_homebindY, _player->m_homebindZ, _player->GetOrientation());
+
         for (int i=0; i < PLAYER_MAX_BATTLEGROUND_QUEUES; i++)
         {
             if(int32 bgTypeId = _player->GetBattleGroundQueueId(i))
@@ -364,7 +373,7 @@ void WorldSession::LogoutPlayer(bool Save)
         // the player may not be in the world when logging out
         // e.g if he got disconnected during a transfer to another map
         // calls to GetMap in this case may cause crashes
-        if(_player->IsInWorld()) MapManager::Instance().GetMap(_player->GetMapId(), _player)->Remove(_player, false);
+        if(_player->IsInWorld()) _player->GetMap()->Remove(_player, false);
         // RemoveFromWorld does cleanup that requires the player to be in the accessor
         ObjectAccessor::Instance().RemoveObject(_player);
 
@@ -373,7 +382,7 @@ void WorldSession::LogoutPlayer(bool Save)
             _player->GetGroup()->SendUpdate();
 
         ///- Broadcast a logout message to the player's friends
-        sSocialMgr.SendFriendStatus(_player, FRIEND_OFFLINE, _player->GetGUIDLow(), "", true);
+        sSocialMgr.SendFriendStatus(_player, FRIEND_OFFLINE, _player->GetGUIDLow(), true);
 
         ///- Delete the player object
         _player->CleanupsBeforeDelete();                    // do some cleanup before deleting to prevent crash at crossreferences to already deleted data
@@ -473,38 +482,38 @@ void WorldSession::Handle_NULL( WorldPacket& recvPacket )
 
 void WorldSession::Handle_EarlyProccess( WorldPacket& recvPacket )
 {
-    sLog.outError( "SESSION: received opcode %s (0x%.4X) that must be proccessed in WorldSocket::OnRead",
+    sLog.outError( "SESSION: received opcode %s (0x%.4X) that must be processed in WorldSocket::OnRead",
         LookupOpcodeName(recvPacket.GetOpcode()),
         recvPacket.GetOpcode());
 }
 
 void WorldSession::Handle_ServerSide( WorldPacket& recvPacket )
 {
-    sLog.outError( "SESSION: received sever-side opcode %s (0x%.4X)",
+    sLog.outError( "SESSION: received server-side opcode %s (0x%.4X)",
         LookupOpcodeName(recvPacket.GetOpcode()),
         recvPacket.GetOpcode());
 }
 
-void WorldSession::Handle_Depricated( WorldPacket& recvPacket )
+void WorldSession::Handle_Deprecated( WorldPacket& recvPacket )
 {
-    sLog.outError( "SESSION: received depricated opcode %s (0x%.4X)",
+    sLog.outError( "SESSION: received deprecated opcode %s (0x%.4X)",
         LookupOpcodeName(recvPacket.GetOpcode()),
         recvPacket.GetOpcode());
 }
 
 void WorldSession::SendAuthWaitQue(uint32 position)
- {
-     if(position == 0)
-     {
-         WorldPacket packet( SMSG_AUTH_RESPONSE, 1 );
-         packet << uint8( AUTH_OK );
-         SendPacket(&packet);
-     }
-     else
-     {
-         WorldPacket packet( SMSG_AUTH_RESPONSE, 5 );
-         packet << uint8( AUTH_WAIT_QUEUE );
-         packet << uint32 (position);
-         SendPacket(&packet);
-     }
- }
+{
+    if(position == 0)
+    {
+        WorldPacket packet( SMSG_AUTH_RESPONSE, 1 );
+        packet << uint8( AUTH_OK );
+        SendPacket(&packet);
+    }
+    else
+    {
+        WorldPacket packet( SMSG_AUTH_RESPONSE, 5 );
+        packet << uint8( AUTH_WAIT_QUEUE );
+        packet << uint32 (position);
+        SendPacket(&packet);
+    }
+}

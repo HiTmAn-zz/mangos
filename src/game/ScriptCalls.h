@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ class InstanceData;
 bool LoadScriptingModule(char const* libName = "");
 void UnloadScriptingModule();
 
-typedef void(MANGOS_IMPORT * scriptCallScriptsInit) ();
+typedef void(MANGOS_IMPORT * scriptCallScriptsInit) (const ObjectMgr::ScriptNameMap &scriptNames);
 typedef void(MANGOS_IMPORT * scriptCallScriptsFree) ();
 typedef char const* (MANGOS_IMPORT * scriptCallScriptsVersion) ();
 

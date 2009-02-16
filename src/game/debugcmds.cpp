@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,9 @@
 #include "GossipDef.h"
 #include "Language.h"
 #include "MapManager.h"
+#include "BattleGroundMgr.h"
 #include <fstream>
+#include "ObjectMgr.h"
 
 bool ChatHandler::HandleDebugInArcCommand(const char* /*args*/)
 {
@@ -59,8 +61,8 @@ bool ChatHandler::HandleDebugSpellFailCommand(const char* args)
     uint8 failnum = (uint8)atoi(px);
 
     WorldPacket data(SMSG_CAST_FAILED, 5);
-    data << (uint32)133;
-    data << failnum;
+    data << uint32(133);
+    data << uint8(failnum);
     m_session->SendPacket(&data);
 
     return true;
@@ -125,7 +127,7 @@ bool ChatHandler::HandleBuyErrorCommand(const char* args)
     return true;
 }
 
-bool ChatHandler::HandleSendOpcodeCommand(const char* args)
+bool ChatHandler::HandleSendOpcodeCommand(const char* /*args*/)
 {
     Unit *unit = getSelectedUnit();
     if (!unit || (unit->GetTypeId() != TYPEID_PLAYER))
@@ -145,11 +147,14 @@ bool ChatHandler::HandleSendOpcodeCommand(const char* args)
         std::string type;
         ifs >> type;
 
+        if(type == "")
+            break;
+
         if(type == "uint8")
         {
-            uint8 val1;
+            uint16 val1;
             ifs >> val1;
-            data << val1;
+            data << uint8(val1);
         }
         else if(type == "uint16")
         {
@@ -187,7 +192,8 @@ bool ChatHandler::HandleSendOpcodeCommand(const char* args)
         }
         else
         {
-            sLog.outDebug("Sending opcode: unknown type %s", type.c_str());
+            sLog.outDebug("Sending opcode: unknown type '%s'", type.c_str());
+            break;
         }
     }
     ifs.close();
@@ -262,7 +268,7 @@ bool ChatHandler::HandleSendQuestPartyMsgCommand(const char* args)
     return true;
 }
 
-bool ChatHandler::HandleGetLootRecipient(const char* args)
+bool ChatHandler::HandleGetLootRecipient(const char* /*args*/)
 {
     Creature* target = getSelectedCreature();
     if(!target)
@@ -511,5 +517,17 @@ bool ChatHandler::HandleGetItemState(const char* args)
             SendSysMessage("All OK!");
     }
 
+    return true;
+}
+
+bool ChatHandler::HandleDebugBattlegroundCommand(const char * /*args*/)
+{
+    sBattleGroundMgr.ToggleTesting();
+    return true;
+}
+
+bool ChatHandler::HandleDebugArenaCommand(const char * /*args*/)
+{
+    sBattleGroundMgr.ToggleArenaTesting();
     return true;
 }

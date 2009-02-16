@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,8 +38,8 @@ RandomMovementGenerator<Creature>::_setRandomLocation(Creature &creature)
     Map const* map = MapManager::Instance().GetBaseMap(mapid);
 
     // For 2D/3D system selection
-    bool is_land_ok  = creature.canWalk();
-    bool is_water_ok = creature.canSwim();
+    //bool is_land_ok  = creature.canWalk();                // not used?
+    //bool is_water_ok = creature.canSwim();                // not used?
     bool is_air_ok   = creature.canFly();
 
     const float angle = rand_norm()*(M_PI*2);

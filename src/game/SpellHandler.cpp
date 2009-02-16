@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -260,14 +260,13 @@ void WorldSession::HandleOpenItemOpcode(WorldPacket& recvPacket)
 
 void WorldSession::HandleGameObjectUseOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
+    CHECK_PACKET_SIZE(recv_data, 8);
 
     uint64 guid;
-    uint32 spellId = OPEN_CHEST;
 
     recv_data >> guid;
 
-    sLog.outDebug( "WORLD: Recvd CMSG_GAMEOBJ_USE Message [guid=%u]", guid);
+    sLog.outDebug( "WORLD: Recvd CMSG_GAMEOBJ_USE Message [guid=%u]", GUID_LOPART(guid));
     GameObject *obj = ObjectAccessor::GetGameObject(*_player, guid);
 
     if(!obj)
@@ -356,15 +355,23 @@ void WorldSession::HandleCancelAuraOpcode( WorldPacket& recvPacket)
     if(!IsPositiveSpell(spellId) || (spellInfo->Attributes & SPELL_ATTR_CANT_CANCEL))
         return;
 
-    _player->RemoveAurasDueToSpellByCancel(spellId);
-
-    if (spellId == 2584)                                    // Waiting to resurrect spell cancel, we must remove player from resurrect queue
+    // channeled spell case (it currently casted then)
+    if(IsChanneledSpell(spellInfo))
     {
-        BattleGround *bg = _player->GetBattleGround();
-        if(!bg)
-            return;
-        bg->RemovePlayerFromResurrectQueue(_player->GetGUID());
+        if(Spell* spell = _player->m_currentSpells[CURRENT_CHANNELED_SPELL])
+        {
+            if(spell->m_spellInfo->Id==spellId)
+            {
+                spell->cancel();
+                spell->SetReferencedFromCurrent(false);
+                _player->m_currentSpells[CURRENT_CHANNELED_SPELL] = NULL;
+            }
+        }
+        return;
     }
+
+    // non channeled case
+    _player->RemoveAurasDueToSpellByCancel(spellId);
 }
 
 void WorldSession::HandlePetCancelAuraOpcode( WorldPacket& recvPacket)

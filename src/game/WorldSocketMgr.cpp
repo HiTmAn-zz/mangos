@@ -1,20 +1,20 @@
 /*
-* Copyright (C) 2005-2008,2007 MaNGOS <http://getmangos.com/>
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License as published by
-* the Free Software Foundation; either version 2 of the License, or
-* (at your option) any later version.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License
-* along with this program; if not, write to the Free Software
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-*/
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 
 /** \file WorldSocketMgr.cpp
 *  \ingroup u2w
@@ -79,8 +79,8 @@ class ReactorRunnable : protected ACE_Task_Base
 
         virtual ~ReactorRunnable ()
         {
-            this->Stop ();
-            this->Wait ();
+            Stop ();
+            Wait ();
 
             if (m_Reactor)
                 delete m_Reactor;
@@ -96,7 +96,7 @@ class ReactorRunnable : protected ACE_Task_Base
             if (m_ThreadId != -1)
                 return -1;
 
-            return (m_ThreadId = this->activate ());
+            return (m_ThreadId = activate ());
         }
 
         void Wait () { ACE_Task_Base::wait (); }
@@ -242,7 +242,7 @@ WorldSocketMgr::StartReactiveIO (ACE_UINT16 port, const char* address)
 
     m_NetThreads = new ReactorRunnable[m_NetThreadsCount];
 
-    sLog.outBasic ("Max alowed socket connections %d",ACE::max_handles ());
+    sLog.outBasic ("Max allowed socket connections %d",ACE::max_handles ());
 
     // -1 means use default
     m_SockOutKBuff = sConfig.GetIntDefault ("Network.OutKBuff", -1);
@@ -278,7 +278,7 @@ WorldSocketMgr::StartNetwork (ACE_UINT16 port, const char* address)
     if (!sLog.IsOutDebug ())
         ACE_Log_Msg::instance ()->priority_mask (LM_ERROR, ACE_Log_Msg::PROCESS);
 
-    if (this->StartReactiveIO (port, address) == -1)
+    if (StartReactiveIO (port, address) == -1)
         return -1;
 
     return 0;
@@ -301,7 +301,7 @@ WorldSocketMgr::StopNetwork ()
             m_NetThreads[i].Stop ();
     }
 
-    this->Wait ();
+    Wait ();
 }
 
 void

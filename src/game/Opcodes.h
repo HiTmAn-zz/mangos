@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,12 @@
 #define _OPCODES_H
 
 #include "Common.h"
+
+// Note: this include need for be sure have full definition of class WorldSession
+//       if this class definition not complite then VS for x64 release use different size for
+//       struct OpcodeHandler in this header and Opcode.cpp and get totally wrong data from
+//       table opcodeTable in source when Opcode.h included but WorldSession.h not included
+#include "WorldSession.h"
 
 /// List of Opcodes
 enum Opcodes
@@ -1102,7 +1108,6 @@ enum SessionStatus
     STATUS_NEVER                                            ///< Opcode not accepted from client (deprecated or server side only)
 };
 
-class WorldSession;
 class WorldPacket;
 
 struct OpcodeHandler

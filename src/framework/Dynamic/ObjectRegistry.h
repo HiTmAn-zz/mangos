@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,10 +20,11 @@
 #define MANGOS_OBJECTREGISTRY_H
 
 #include "Platform/Define.h"
-#include "Utilities/HashMap.h"
+#include "Utilities/UnorderedMap.h"
 #include "Policies/Singleton.h"
 
 #include <string>
+#include <vector>
 #include <map>
 
 /** ObjectRegistry holds all registry item of the same type

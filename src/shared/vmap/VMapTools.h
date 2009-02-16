@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+* Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -62,7 +62,7 @@ namespace VMAP
         {
 
             // Integer representation of a floating-point value.
-#define IR(x)   ((G3D::uint32&)x)
+#define IR(x)   (reinterpret_cast<G3D::uint32 const&>(x))
 
             Inside = true;
             const G3D::Vector3& MinB = box.low();

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 #include "Timer.h"
 #include "ObjectAccessor.h"
 #include "MapManager.h"
+#include "BattleGroundMgr.h"
 
 #include "Database/DatabaseEnv.h"
 
@@ -49,7 +50,7 @@ void WorldRunnable::run()
     uint32 prevSleepTime = 0;                               // used for balanced full tick time length near WORLD_SLEEP_CONST
 
     ///- While we have not World::m_stopEvent, update the world
-    while (!World::m_stopEvent)
+    while (!World::IsStopped())
     {
         ++World::m_worldLoopCounter;
         realCurrTime = getMSTime();
@@ -72,9 +73,11 @@ void WorldRunnable::run()
             prevSleepTime = 0;
     }
 
-    sWorld.KickAllQueued();                                 // kick all queued players (and prevent its login at kick in game players)
     sWorld.KickAll();                                       // save and kick all players
     sWorld.UpdateSessions( 1 );                             // real players unload required UpdateSessions call
+
+    // unload battleground templates before different singletons destroyed
+    sBattleGroundMgr.DeleteAlllBattleGrounds();
 
     sWorldSocketMgr->StopNetwork();
 

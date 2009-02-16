@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -84,14 +84,15 @@ bool LoadScriptingModule(char const* libName)
         return false;
     }
 
-    printf("Scripts Library %s was successfully loaded.\n",name.c_str());
+    sLog.outString();
+    sLog.outString( ">>> Scripts Library %s was successfully loaded.\n", name.c_str() );
 
     //heh we are still there :P we have a valid library
     //we reload script
     UnloadScriptingModule();
 
     Script=testScript;
-    Script->ScriptsInit();
+    Script->ScriptsInit(objmgr.GetScriptNames());
 
     sWorld.SetScriptsVersion(Script->ScriptsVersion());
 

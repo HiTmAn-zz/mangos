@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +31,23 @@
 #include "MapManager.h"
 #include "GridNotifiersImpl.h"
 #include "CellImpl.h"
+#include "AccountMgr.h"
 
+// Supported shift-links (client generated and server side)
+// |color|Harea:area_id|h[name]|h|r
+// |color|Hcreature:creature_guid|h[name]|h|r
+// |color|Hcreature_entry:creature_id|h[name]|h|r
+// |color|Hgameevent:id|h[name]|h|r
+// |color|Hgameobject:go_guid|h[name]|h|r
+// |color|Hgameobject_entry:go_id|h[name]|h|r
+// |color|Hitem:item_id:perm_ench_id:0:0|h[name]|h|r
+// |color|Hitemset:itemset_id|h[name]|h|r
+// |color|Hplayer:name|h[name]|h|r                                        - client, in some messages, at click copy only name instead link
+// |color|Hquest:quest_id|h[name]|h|r
+// |color|Hskill:skill_id|h[name]|h|r
+// |color|Hspell:spell_id|h[name]|h|r                                     - client, spellbook spell icon shift-click
+// |color|Htalent:talent_id,rank|h[name]|h|r                              - client, talent icon shift-click
+// |color|Htele:id|h[name]|h|r
 bool ChatHandler::load_command_table = true;
 
 ChatCommand * ChatHandler::getCommandTable()
@@ -61,16 +77,44 @@ ChatCommand * ChatHandler::getCommandTable()
         { NULL,             0,                  false, NULL,                                           "", NULL }
     };
 
+    static ChatCommand serverIdleRestartCommandTable[] =
+    {
+        { "cancel",         SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleServerShutDownCancelCommand,"", NULL },
+        { ""   ,            SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleServerIdleRestartCommand,   "", NULL },
+        { NULL,             0,                  false, NULL,                                           "", NULL }
+    };
+
+    static ChatCommand serverIdleShutdownCommandTable[] =
+    {
+        { "cancel",         SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleServerShutDownCancelCommand,"", NULL },
+        { ""   ,            SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleServerIdleShutDownCommand,  "", NULL },
+        { NULL,             0,                  false, NULL,                                           "", NULL }
+    };
+
+    static ChatCommand serverRestartCommandTable[] =
+    {
+        { "cancel",         SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleServerShutDownCancelCommand,"", NULL },
+        { ""   ,            SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleServerRestartCommand,       "", NULL },
+        { NULL,             0,                  false, NULL,                                           "", NULL }
+    };
+
+    static ChatCommand serverShutdownCommandTable[] =
+    {
+        { "cancel",         SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleServerShutDownCancelCommand,"", NULL },
+        { ""   ,            SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleServerShutDownCommand,      "", NULL },
+        { NULL,             0,                  false, NULL,                                           "", NULL }
+    };
+
     static ChatCommand serverCommandTable[] =
     {
         { "corpses",        SEC_GAMEMASTER,     true,  &ChatHandler::HandleServerCorpsesCommand,       "", NULL },
         { "exit",           SEC_CONSOLE,        true,  &ChatHandler::HandleServerExitCommand,          "", NULL },
-        { "idlerestart",    SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleIdleRestartCommand,         "", NULL },
-        { "idleshutdown",   SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleIdleShutDownCommand,        "", NULL },
+        { "idlerestart",    SEC_ADMINISTRATOR,  true,  NULL,                                           "", serverIdleRestartCommandTable },
+        { "idleshutdown",   SEC_ADMINISTRATOR,  true,  NULL,                                           "", serverShutdownCommandTable },
         { "info",           SEC_PLAYER,         true,  &ChatHandler::HandleServerInfoCommand,          "", NULL },
         { "motd",           SEC_PLAYER,         true,  &ChatHandler::HandleServerMotdCommand,          "", NULL },
-        { "restart",        SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleRestartCommand,             "", NULL },
-        { "shutdown",       SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleShutDownCommand,            "", NULL },
+        { "restart",        SEC_ADMINISTRATOR,  true,  NULL,                                           "", serverRestartCommandTable },
+        { "shutdown",       SEC_ADMINISTRATOR,  true,  NULL,                                           "", serverShutdownCommandTable },
         { "set",            SEC_ADMINISTRATOR,  true,  NULL,                                           "", serverSetCommandTable },
         { NULL,             0,                  false, NULL,                                           "", NULL }
     };
@@ -169,6 +213,8 @@ ChatCommand * ChatHandler::getCommandTable()
         { "Mod32Value",     SEC_ADMINISTRATOR,  false, &ChatHandler::HandleMod32Value,                 "", NULL },
         { "anim",           SEC_GAMEMASTER,     false, &ChatHandler::HandleAnimCommand,                "", NULL },
         { "lootrecipient",  SEC_GAMEMASTER,     false, &ChatHandler::HandleGetLootRecipient,           "", NULL },
+        { "arena",          SEC_ADMINISTRATOR,  false, &ChatHandler::HandleDebugArenaCommand,          "", NULL },
+        { "bg",             SEC_ADMINISTRATOR,  false, &ChatHandler::HandleDebugBattlegroundCommand,   "", NULL },
         { NULL,             0,                  false, NULL,                                           "", NULL }
     };
 
@@ -217,6 +263,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "creature_involvedrelation",   SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadCreatureQuestInvRelationsCommand,"",NULL },
         { "creature_loot_template",      SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadLootTemplatesCreatureCommand,   "", NULL },
         { "creature_questrelation",      SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadCreatureQuestRelationsCommand,  "", NULL },
+        { "db_script_string",            SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadDbScriptStringCommand,          "", NULL },
         { "disenchant_loot_template",    SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadLootTemplatesDisenchantCommand, "", NULL },
         { "fishing_loot_template",       SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadLootTemplatesFishingCommand,    "", NULL },
         { "game_graveyard_zone",         SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadGameGraveyardZoneCommand,       "", NULL },
@@ -262,7 +309,6 @@ ChatCommand * ChatHandler::getCommandTable()
         { "locales_page_text",           SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadLocalesPageTextCommand,         "", NULL },
         { "locales_quest",               SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadLocalesQuestCommand,            "", NULL },
 
-        { "",                            SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadCommand,                        "", NULL },
         { NULL,                          0,                 false, NULL,                                                     "", NULL }
     };
 
@@ -409,10 +455,10 @@ ChatCommand * ChatHandler::getCommandTable()
     {
         { "add",            SEC_GAMEMASTER,     false, &ChatHandler::HandleGameObjectCommand,          "", NULL },
         { "delete",         SEC_GAMEMASTER,     false, &ChatHandler::HandleDelObjectCommand,           "", NULL },
-        { "target",         SEC_GAMEMASTER,     false, &ChatHandler::HandleTargetObjectCommand,        "", NULL },
-        { "turn",           SEC_GAMEMASTER,     false, &ChatHandler::HandleTurnObjectCommand,          "", NULL },
         { "move",           SEC_GAMEMASTER,     false, &ChatHandler::HandleMoveObjectCommand,          "", NULL },
         { "near",           SEC_ADMINISTRATOR,  false, &ChatHandler::HandleNearObjectCommand,          "", NULL },
+        { "target",         SEC_GAMEMASTER,     false, &ChatHandler::HandleTargetObjectCommand,        "", NULL },
+        { "turn",           SEC_GAMEMASTER,     false, &ChatHandler::HandleTurnObjectCommand,          "", NULL },
         { NULL,             0,                  false, NULL,                                           "", NULL }
     };
 
@@ -520,7 +566,9 @@ ChatCommand * ChatHandler::getCommandTable()
         { "password",       SEC_PLAYER,         false, &ChatHandler::HandlePasswordCommand,            "", NULL },
         { "lockaccount",    SEC_PLAYER,         false, &ChatHandler::HandleLockAccountCommand,         "", NULL },
         { "respawn",        SEC_ADMINISTRATOR,  false, &ChatHandler::HandleRespawnCommand,             "", NULL },
-        { "sendmail",       SEC_MODERATOR,      false, &ChatHandler::HandleSendMailCommand,            "", NULL },
+        { "senditems",      SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleSendItemsCommand,           "", NULL },
+        { "sendmail",       SEC_MODERATOR,      true,  &ChatHandler::HandleSendMailCommand,            "", NULL },
+        { "sendmoney",      SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleSendMoneyCommand,           "", NULL },
         { "rename",         SEC_GAMEMASTER,     true,  &ChatHandler::HandleRenameCommand,              "", NULL },
         { "loadscripts",    SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleLoadScriptsCommand,         "", NULL },
         { "mute",           SEC_GAMEMASTER,     true,  &ChatHandler::HandleMuteCommand,                "", NULL },
@@ -529,7 +577,8 @@ ChatCommand * ChatHandler::getCommandTable()
         { "cometome",       SEC_ADMINISTRATOR,  false, &ChatHandler::HandleComeToMeCommand,            "", NULL },
         { "damage",         SEC_ADMINISTRATOR,  false, &ChatHandler::HandleDamageCommand,              "", NULL },
         { "combatstop",     SEC_GAMEMASTER,     false, &ChatHandler::HandleCombatStopCommand,          "", NULL },
-        { "chardelete",     SEC_CONSOLE,        true,  &ChatHandler::HandleCombatStopCommand,          "", NULL },
+        { "flusharenapoints",    SEC_ADMINISTRATOR, false, &ChatHandler::HandleFlushArenaPointsCommand,         "",   NULL },
+        { "chardelete",     SEC_CONSOLE,        true,  &ChatHandler::HandleCharacterDeleteCommand,     "", NULL },
         { "sendmessage",    SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleSendMessageCommand,         "", NULL },
         { "repairitems",    SEC_GAMEMASTER,     false, &ChatHandler::HandleRepairitemsCommand,         "", NULL },
         { "waterwalk",      SEC_GAMEMASTER,     false, &ChatHandler::HandleWaterwalkCommand,           "", NULL },
@@ -587,6 +636,55 @@ bool ChatHandler::isAvailable(ChatCommand const& cmd) const
 {
     // check security level only for simple  command (without child commands)
     return m_session->GetSecurity() >= cmd.SecurityLevel;
+}
+
+bool ChatHandler::HasLowerSecurity(Player* target, uint64 guid, bool strong)
+{
+    WorldSession* target_session = NULL;
+    uint32 target_account = 0;
+
+    if (target)
+        target_session = target->GetSession();
+    else if (guid)
+        target_account = objmgr.GetPlayerAccountIdByGUID(guid);
+
+    if(!target_session && !target_account)
+    {
+        SendSysMessage(LANG_PLAYER_NOT_FOUND);
+        SetSentErrorMessage(true);
+        return true;
+    }
+
+    return HasLowerSecurityAccount(target_session,target_account,strong);
+}
+
+bool ChatHandler::HasLowerSecurityAccount(WorldSession* target, uint32 target_account, bool strong)
+{
+    uint32 target_sec;
+
+    // allow everything from console and RA console
+    if (!m_session)
+        return false;
+
+    // ignore only for non-players for non strong checks (when allow apply command at least to same sec level)
+    if (m_session->GetSecurity() > SEC_PLAYER && !strong && !sWorld.getConfig(CONFIG_GM_LOWER_SECURITY))
+        return false;
+
+    if (target)
+        target_sec = target->GetSecurity();
+    else if (target_account)
+        target_sec = accmgr.GetSecurity(target_account);
+    else
+        return true;                                        // caller must report error for (target==NULL && target_account==0)
+
+    if (m_session->GetSecurity() < target_sec || strong && m_session->GetSecurity() <= target_sec)
+    {
+        SendSysMessage(LANG_YOURS_SECURITY_IS_LOW);
+        SetSentErrorMessage(true);
+        return true;
+    }
+
+    return false;
 }
 
 bool ChatHandler::hasStringAbbr(const char* name, const char* part)
@@ -658,9 +756,9 @@ void ChatHandler::PSendSysMessage(int32 entry, ...)
 {
     const char *format = GetMangosString(entry);
     va_list ap;
-    char str [1024];
+    char str [2048];
     va_start(ap, entry);
-    vsnprintf(str,1024,format, ap );
+    vsnprintf(str,2048,format, ap );
     va_end(ap);
     SendSysMessage(str);
 }
@@ -668,14 +766,14 @@ void ChatHandler::PSendSysMessage(int32 entry, ...)
 void ChatHandler::PSendSysMessage(const char *format, ...)
 {
     va_list ap;
-    char str [1024];
+    char str [2048];
     va_start(ap, format);
-    vsnprintf(str,1024,format, ap );
+    vsnprintf(str,2048,format, ap );
     va_end(ap);
     SendSysMessage(str);
 }
 
-bool ChatHandler::ExecuteCommandInTable(ChatCommand *table, const char* text, std::string fullcmd)
+bool ChatHandler::ExecuteCommandInTable(ChatCommand *table, const char* text, const std::string& fullcmd)
 {
     char const* oldtext = text;
     std::string cmd = "";
@@ -724,7 +822,7 @@ bool ChatHandler::ExecuteCommandInTable(ChatCommand *table, const char* text, st
                 {
                     Player* p = m_session->GetPlayer();
                     uint64 sel_guid = p->GetSelection();
-                    sLog.outCommand("Command: %s [Player: %s (Account: %u) X: %f Y: %f Z: %f Map: %u Selected: %s (GUID: %u)]",
+                    sLog.outCommand(m_session->GetAccountId(),"Command: %s [Player: %s (Account: %u) X: %f Y: %f Z: %f Map: %u Selected: %s (GUID: %u)]",
                         fullcmd.c_str(),p->GetName(),m_session->GetAccountId(),p->GetPositionX(),p->GetPositionY(),p->GetPositionZ(),p->GetMapId(),
                         GetLogNameForGuid(sel_guid),GUID_LOPART(sel_guid));
                 }
@@ -1056,12 +1154,23 @@ char* ChatHandler::extractKeyFromLink(char* text, char const* const* linkTypes, 
     // [name] Shift-click form |color|linkType:key|h[name]|h|r
     // or
     // [name] Shift-click form |color|linkType:key:something1:...:somethingN|h[name]|h|r
+    // or
+    // [name] Shift-click form |linkType:key|h[name]|h|r
 
-    char* check = strtok(text, "|");                        // skip color
-    if(!check)
-        return NULL;                                        // end of data
+    char* tail;
 
-    char* cLinkType = strtok(NULL, ":");                    // linktype
+    if(text[1]=='c')
+    {
+        char* check = strtok(text, "|");                    // skip color
+        if(!check)
+            return NULL;                                    // end of data
+
+        tail = strtok(NULL, "");                            // tail
+    }
+    else
+        tail = text+1;                                      // skip first |
+
+    char* cLinkType = strtok(tail, ":");                    // linktype
     if(!cLinkType)
         return NULL;                                        // end of data
 
@@ -1142,7 +1251,7 @@ GameObject* ChatHandler::GetObjectGlobalyWithGuidOrNearWithDbGuid(uint32 lowguid
 
         TypeContainerVisitor<MaNGOS::GameObjectSearcher<MaNGOS::GameObjectWithDbGUIDCheck>, GridTypeMapContainer > object_checker(checker);
         CellLock<GridReadGuard> cell_lock(cell, p);
-        cell_lock->Visit(cell_lock, object_checker, *MapManager::Instance().GetMap(pl->GetMapId(), pl));
+        cell_lock->Visit(cell_lock, object_checker, *pl->GetMap());
     }
 
     return obj;
@@ -1200,9 +1309,84 @@ GameTele const* ChatHandler::extractGameTeleFromLink(char* text)
     return objmgr.GetGameTele(cId);
 }
 
-const char *ChatHandler::GetName() const
+enum GuidLinkType
 {
-    return m_session->GetPlayer()->GetName();
+    SPELL_LINK_PLAYER     = 0,                              // must be first for selection in not link case
+    SPELL_LINK_CREATURE   = 1,
+    SPELL_LINK_GAMEOBJECT = 2
+};
+
+static char const* const guidKeys[] =
+{
+    "Hplayer",
+    "Hcreature",
+    "Hgameobject",
+    0
+};
+
+uint64 ChatHandler::extractGuidFromLink(char* text)
+{
+    int type = 0;
+
+    // |color|Hcreature:creature_guid|h[name]|h|r
+    // |color|Hgameobject:go_guid|h[name]|h|r
+    // |color|Hplayer:name|h[name]|h|r
+    char* idS = extractKeyFromLink(text,guidKeys,&type);
+    if(!idS)
+        return 0;
+
+    switch(type)
+    {
+        case SPELL_LINK_PLAYER:
+        {
+            std::string name = idS;
+            if(!normalizePlayerName(name))
+                return 0;
+
+            if(Player* player = objmgr.GetPlayer(name.c_str()))
+                return player->GetGUID();
+
+            if(uint64 guid = objmgr.GetPlayerGUIDByName(name))
+                return guid;
+
+            return 0;
+        }
+        case SPELL_LINK_CREATURE:
+        {
+            uint32 lowguid = (uint32)atol(idS);
+
+            if(CreatureData const* data = objmgr.GetCreatureData(lowguid) )
+                return MAKE_NEW_GUID(lowguid,data->id,HIGHGUID_UNIT);
+            else
+                return 0;
+        }
+        case SPELL_LINK_GAMEOBJECT:
+        {
+            uint32 lowguid = (uint32)atol(idS);
+
+            if(GameObjectData const* data = objmgr.GetGOData(lowguid) )
+                return MAKE_NEW_GUID(lowguid,data->id,HIGHGUID_GAMEOBJECT);
+            else
+                return 0;
+        }
+    }
+
+    // unknown type?
+    return 0;
+}
+
+std::string ChatHandler::extractPlayerNameFromLink(char* text)
+{
+    // |color|Hplayer:name|h[name]|h|r
+    char* name_str = extractKeyFromLink(text,"Hplayer");
+    if(!name_str)
+        return "";
+
+    std::string name = name_str;
+    if(!normalizePlayerName(name))
+        return "";
+
+    return name;
 }
 
 bool ChatHandler::needReportToTarget(Player* chr) const
@@ -1228,7 +1412,7 @@ void CliHandler::SendSysMessage(const char *str)
     m_print("\r\n");
 }
 
-const char *CliHandler::GetName() const
+std::string CliHandler::GetNameLink() const
 {
     return GetMangosString(LANG_CONSOLE_COMMAND);
 }

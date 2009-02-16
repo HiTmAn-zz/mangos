@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -376,12 +376,12 @@ void Object::_BuildMovementUpdate(ByteBuffer * data, uint8 flags, uint32 flags2 
 
         *data << ((Unit*)this)->GetSpeed( MOVE_WALK );
         *data << ((Unit*)this)->GetSpeed( MOVE_RUN );
-        *data << ((Unit*)this)->GetSpeed( MOVE_SWIMBACK );
+        *data << ((Unit*)this)->GetSpeed( MOVE_SWIM_BACK );
         *data << ((Unit*)this)->GetSpeed( MOVE_SWIM );
-        *data << ((Unit*)this)->GetSpeed( MOVE_WALKBACK );
-        *data << ((Unit*)this)->GetSpeed( MOVE_FLY );
-        *data << ((Unit*)this)->GetSpeed( MOVE_FLYBACK );
-        *data << ((Unit*)this)->GetSpeed( MOVE_TURN );
+        *data << ((Unit*)this)->GetSpeed( MOVE_RUN_BACK );
+        *data << ((Unit*)this)->GetSpeed( MOVE_FLIGHT );
+        *data << ((Unit*)this)->GetSpeed( MOVE_FLIGHT_BACK );
+        *data << ((Unit*)this)->GetSpeed( MOVE_TURN_RATE );
 
         // 0x08000000
         if(flags2 & MOVEMENTFLAG_SPLINE2)
@@ -625,7 +625,7 @@ void Object::_BuildValuesUpdate(uint8 updatetype, ByteBuffer * data, UpdateMask 
                                 *data << uint32(1);
                                 break;
                             default:
-                                *data << uint32(0);         //unknown. not happen.
+                                *data << uint32(0);         // unknown. not happen.
                                 break;
                         }
                     }
@@ -934,6 +934,56 @@ void Object::RemoveFlag( uint16 index, uint32 oldFlag )
     }
 }
 
+void Object::SetByteFlag( uint16 index, uint8 offset, uint8 newFlag )
+{
+    ASSERT( index < m_valuesCount || PrintIndexError( index , true ) );
+
+    if(offset > 4)
+    {
+        sLog.outError("Object::SetByteFlag: wrong offset %u", offset);
+        return;
+    }
+
+    if(!(uint8(m_uint32Values[ index ] >> (offset * 8)) & newFlag))
+    {
+        m_uint32Values[ index ] |= uint32(uint32(newFlag) << (offset * 8));
+
+        if(m_inWorld)
+        {
+            if(!m_objectUpdated)
+            {
+                ObjectAccessor::Instance().AddUpdateObject(this);
+                m_objectUpdated = true;
+            }
+        }
+    }
+}
+
+void Object::RemoveByteFlag( uint16 index, uint8 offset, uint8 oldFlag )
+{
+    ASSERT( index < m_valuesCount || PrintIndexError( index , true ) );
+
+    if(offset > 4)
+    {
+        sLog.outError("Object::RemoveByteFlag: wrong offset %u", offset);
+        return;
+    }
+
+    if(uint8(m_uint32Values[ index ] >> (offset * 8)) & oldFlag)
+    {
+        m_uint32Values[ index ] &= ~uint32(uint32(oldFlag) << (offset * 8));
+
+        if(m_inWorld)
+        {
+            if(!m_objectUpdated)
+            {
+                ObjectAccessor::Instance().AddUpdateObject(this);
+                m_objectUpdated = true;
+            }
+        }
+    }
+}
+
 bool Object::PrintIndexError(uint32 index, bool set) const
 {
     sLog.outError("ERROR: Attempt %s non-existed value field: %u (count: %u) for object typeid: %u type mask: %u",(set ? "set value to" : "get value from"),index,m_valuesCount,GetTypeId(),m_objectType);
@@ -943,18 +993,10 @@ bool Object::PrintIndexError(uint32 index, bool set) const
 }
 
 WorldObject::WorldObject()
+    : m_mapId(0), m_InstanceId(0),
+    m_positionX(0.0f), m_positionY(0.0f), m_positionZ(0.0f), m_orientation(0.0f),
+    mSemaphoreTeleport(false)
 {
-    m_positionX         = 0.0f;
-    m_positionY         = 0.0f;
-    m_positionZ         = 0.0f;
-    m_orientation       = 0.0f;
-
-    m_mapId             = 0;
-    m_InstanceId        = 0;
-
-    m_name = "";
-
-    mSemaphoreTeleport  = false;
 }
 
 void WorldObject::_Create( uint32 guidlow, HighGuid guidhigh, uint32 mapid )
@@ -976,7 +1018,7 @@ uint32 WorldObject::GetAreaId() const
 
 InstanceData* WorldObject::GetInstanceData()
 {
-    Map *map = MapManager::Instance().GetMap(m_mapId, this);
+    Map *map = GetMap();
     return map->IsDungeon() ? ((InstanceMap*)map)->GetInstanceData() : NULL;
 }
 
@@ -1027,14 +1069,18 @@ float WorldObject::GetDistanceZ(const WorldObject* obj) const
     return ( dist > 0 ? dist : 0);
 }
 
-bool WorldObject::IsWithinDistInMap(const WorldObject* obj, const float dist2compare) const
+bool WorldObject::IsWithinDistInMap(const WorldObject* obj, const float dist2compare, const bool is3D) const
 {
     if (!obj || !IsInMap(obj)) return false;
 
     float dx = GetPositionX() - obj->GetPositionX();
     float dy = GetPositionY() - obj->GetPositionY();
-    float dz = GetPositionZ() - obj->GetPositionZ();
-    float distsq = dx*dx + dy*dy + dz*dz;
+    float distsq = dx*dx + dy*dy;
+    if(is3D)
+    {
+        float dz = GetPositionZ() - obj->GetPositionZ();
+        distsq += dz*dz;
+    }
     float sizefactor = GetObjectSize() + obj->GetObjectSize();
     float maxdist = dist2compare + sizefactor;
 
@@ -1204,7 +1250,7 @@ namespace MaNGOS
                     data = new WorldPacket(SMSG_MESSAGECHAT, 200);
 
                     // TODO: i_object.GetName() also must be localized?
-                    i_object.BuildMonsterChat(data,i_msgtype,text,i_language,i_object.GetName(),i_targetGUID);
+                    i_object.BuildMonsterChat(data,i_msgtype,text,i_language,i_object.GetNameForLocaleIdx(loc_idx),i_targetGUID);
 
                     i_data_cache[cache_idx] = data;
                 }
@@ -1347,12 +1393,12 @@ void WorldObject::BuildTeleportAckMsg(WorldPacket *data, float x, float y, float
 
 void WorldObject::SendMessageToSet(WorldPacket *data, bool /*bToSelf*/)
 {
-    MapManager::Instance().GetMap(m_mapId, this)->MessageBroadcast(this, data);
+    GetMap()->MessageBroadcast(this, data);
 }
 
 void WorldObject::SendMessageToSetInRange(WorldPacket *data, float dist, bool /*bToSelf*/)
 {
-    MapManager::Instance().GetMap(m_mapId, this)->MessageDistBroadcast(this, data, dist);
+    GetMap()->MessageDistBroadcast(this, data, dist);
 }
 
 void WorldObject::SendObjectDeSpawnAnim(uint64 guid)
@@ -1541,8 +1587,8 @@ void WorldObject::GetNearPoint(WorldObject const* searcher, float &x, float &y, 
         TypeContainerVisitor<MaNGOS::WorldObjectWorker<MaNGOS::NearUsedPosDo>, WorldTypeMapContainer > world_obj_worker(worker);
 
         CellLock<GridReadGuard> cell_lock(cell, p);
-        cell_lock->Visit(cell_lock, grid_obj_worker,  *MapManager::Instance().GetMap(GetMapId(), this));
-        cell_lock->Visit(cell_lock, world_obj_worker, *MapManager::Instance().GetMap(GetMapId(), this));
+        cell_lock->Visit(cell_lock, grid_obj_worker,  *GetMap());
+        cell_lock->Visit(cell_lock, world_obj_worker, *GetMap());
     }
 
     // maybe can just place in primary position

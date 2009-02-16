@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ class MANGOS_DLL_SPEC QueryResult
 
         uint32 GetField_idx(const std::string &name) const
         {
-            for(FieldNames::const_iterator iter = GetFiedNames().begin(); iter != GetFiedNames().end(); ++iter)
+            for(FieldNames::const_iterator iter = GetFieldNames().begin(); iter != GetFieldNames().end(); ++iter)
             {
                 if(iter->second == name)
                     return iter->first;
@@ -53,7 +53,7 @@ class MANGOS_DLL_SPEC QueryResult
 
         uint32 GetFieldCount() const { return mFieldCount; }
         uint64 GetRowCount() const { return mRowCount; }
-        FieldNames const& GetFiedNames() const {return mFieldNames; }
+        FieldNames const& GetFieldNames() const {return mFieldNames; }
 
     protected:
         Field *mCurrentRow;

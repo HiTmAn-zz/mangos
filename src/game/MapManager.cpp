@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -107,9 +107,9 @@ MapManager::_GetBaseMap(uint32 id)
         Guard guard(*this);
 
         const MapEntry* entry = sMapStore.LookupEntry(id);
-        if (entry && entry->IsDungeon())
+        if (entry && entry->Instanceable())
         {
-            m = new MapInstanced(id, i_gridCleanUpDelay, 0);
+            m = new MapInstanced(id, i_gridCleanUpDelay);
         }
         else
         {
@@ -220,7 +220,7 @@ bool MapManager::CanPlayerEnter(uint32 mapid, Player* player)
         return true;
 }
 
-void MapManager::DeleteInstance(uint32 mapid, uint32 instanceId, uint8 mode)
+void MapManager::DeleteInstance(uint32 mapid, uint32 instanceId)
 {
     Map *m = _GetBaseMap(mapid);
     if (m && m->Instanceable())
@@ -238,11 +238,13 @@ void MapManager::RemoveBonesFromMap(uint32 mapid, uint64 guid, float x, float y)
 }
 
 void
-MapManager::Update(time_t diff)
+MapManager::Update(uint32 diff)
 {
     i_timer.Update(diff);
     if( !i_timer.Passed() )
         return;
+
+    ObjectAccessor::Instance().UpdatePlayers(i_timer.GetCurrent());
 
     for(MapMapType::iterator iter=i_maps.begin(); iter != i_maps.end(); ++iter)
     {
@@ -276,7 +278,8 @@ bool MapManager::ExistMapAndVMap(uint32 mapid, float x,float y)
 bool MapManager::IsValidMAP(uint32 mapid)
 {
     MapEntry const* mEntry = sMapStore.LookupEntry(mapid);
-    return mEntry && (!mEntry->Instanceable() || objmgr.GetInstanceTemplate(mapid));
+    return mEntry && (!mEntry->IsDungeon() || objmgr.GetInstanceTemplate(mapid));
+    // TODO: add check for battleground template
 }
 
 void MapManager::LoadGrid(int mapid, float x, float y, const WorldObject* obj, bool no_unload)
@@ -334,7 +337,7 @@ uint32 MapManager::GetNumPlayersInInstances()
         MapInstanced::InstancedMaps &maps = ((MapInstanced *)map)->GetInstancedMaps();
         for(MapInstanced::InstancedMaps::iterator mitr = maps.begin(); mitr != maps.end(); ++mitr)
             if(mitr->second->IsDungeon())
-                ret += ((InstanceMap*)mitr->second)->GetPlayers().size();
+                ret += ((InstanceMap*)mitr->second)->GetPlayers().getSize();
     }
     return ret;
 }

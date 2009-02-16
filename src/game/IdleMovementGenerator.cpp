@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,7 @@ DistractMovementGenerator::Finalize(Unit& owner)
 }
 
 bool
-DistractMovementGenerator::Update(Unit& owner, const uint32& time_diff)
+DistractMovementGenerator::Update(Unit& /*owner*/, const uint32& time_diff)
 {
     if(time_diff > m_timer)
         return false;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #include "Common.h"
 #include "Language.h"
 #include "Database/DatabaseEnv.h"
+#include "Database/DatabaseImpl.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
 #include "Log.h"
@@ -79,7 +80,7 @@ void WorldSession::HandleWhoOpcode( WorldPacket & recv_data )
     std::string player_name, guild_name;
 
     recv_data >> level_min;                                 // maximal player level, default 0
-    recv_data >> level_max;                                 // minimal player level, default 100
+    recv_data >> level_max;                                 // minimal player level, default 100 (MAX_LEVEL)
     recv_data >> player_name;                               // player name, case sensitive...
 
     // recheck
@@ -144,8 +145,8 @@ void WorldSession::HandleWhoOpcode( WorldPacket & recv_data )
 
     // client send in case not set max level value 100 but mangos support 255 max level,
     // update it to show GMs with characters after 100 level
-    if(level_max >= 100)
-        level_max = 255;
+    if(level_max >= MAX_LEVEL)
+        level_max = STRONG_MAX_LEVEL;
 
     uint32 team = _player->GetTeam();
     uint32 security = GetSecurity();
@@ -273,13 +274,6 @@ void WorldSession::HandleLogoutRequestOpcode( WorldPacket & /*recv_data*/ )
     if (uint64 lguid = GetPlayer()->GetLootGUID())
         DoLootRelease(lguid);
 
-    //instant logout for admins, gm's, mod's
-    if( GetSecurity() > SEC_PLAYER )
-    {
-        LogoutPlayer(true);
-        return;
-    }
-
     //Can not logout if...
     if( GetPlayer()->isInCombat() ||                        //...is in combat
         GetPlayer()->duel         ||                        //...is in Duel
@@ -295,8 +289,9 @@ void WorldSession::HandleLogoutRequestOpcode( WorldPacket & /*recv_data*/ )
         return;
     }
 
-    //instant logout in taverns/cities or on taxi
-    if(GetPlayer()->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) || GetPlayer()->isInFlight())
+    //instant logout in taverns/cities or on taxi or for admins, gm's, mod's if its enabled in mangosd.conf
+    if (GetPlayer()->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) || GetPlayer()->isInFlight() ||
+        GetSecurity() >= sWorld.getConfig(CONFIG_INSTANT_LOGOUT))
     {
         LogoutPlayer(true);
         return;
@@ -352,189 +347,6 @@ void WorldSession::HandleLogoutCancelOpcode( WorldPacket & /*recv_data*/ )
     }
 
     sLog.outDebug( "WORLD: sent SMSG_LOGOUT_CANCEL_ACK Message" );
-}
-
-void WorldSession::SendGMTicketGetTicket(uint32 status, char const* text)
-{
-    int len = text ? strlen(text) : 0;
-    WorldPacket data( SMSG_GMTICKET_GETTICKET, (4+len+1+4+2+4+4) );
-    data << uint32(status);                                 // standard 0x0A, 0x06 if text present
-    if(status == 6)
-    {
-        data << text;                                       // ticket text
-        data << uint8(0x7);                                 // ticket category
-        data << float(0);                                   // time from ticket creation?
-        data << float(0);                                   // const
-        data << float(0);                                   // const
-        data << uint8(0);                                   // const
-        data << uint8(0);                                   // const
-    }
-    SendPacket( &data );
-}
-
-void WorldSession::HandleGMTicketGetTicketOpcode( WorldPacket & /*recv_data*/ )
-{
-    WorldPacket data( SMSG_QUERY_TIME_RESPONSE, 4+4 );
-    data << (uint32)time(NULL);
-    data << (uint32)0;
-    SendPacket( &data );
-
-    uint64 guid;
-    Field *fields;
-    guid = GetPlayer()->GetGUID();
-
-    QueryResult *result = CharacterDatabase.PQuery("SELECT COUNT(ticket_id) FROM character_ticket WHERE guid = '%u'", GUID_LOPART(guid));
-
-    if (result)
-    {
-        int cnt;
-        fields = result->Fetch();
-        cnt = fields[0].GetUInt32();
-        delete result;
-
-        if ( cnt > 0 )
-        {
-            QueryResult *result2 = CharacterDatabase.PQuery("SELECT ticket_text FROM character_ticket WHERE guid = '%u'", GUID_LOPART(guid));
-            if(result2)
-            {
-                Field *fields2 = result2->Fetch();
-                SendGMTicketGetTicket(0x06,fields2[0].GetString());
-                delete result2;
-            }
-        }
-        else
-            SendGMTicketGetTicket(0x0A,0);
-    }
-}
-
-void WorldSession::HandleGMTicketUpdateTextOpcode( WorldPacket & recv_data )
-{
-    CHECK_PACKET_SIZE(recv_data,1);
-
-    std::string ticketText;
-    recv_data >> ticketText;
-
-    CharacterDatabase.escape_string(ticketText);
-    CharacterDatabase.PExecute("UPDATE character_ticket SET ticket_text = '%s' WHERE guid = '%u'", ticketText.c_str(), _player->GetGUIDLow());
-}
-
-void WorldSession::HandleGMTicketDeleteOpcode( WorldPacket & /*recv_data*/ )
-{
-    uint32 guid = GetPlayer()->GetGUIDLow();
-
-    CharacterDatabase.PExecute("DELETE FROM character_ticket WHERE guid = '%u' LIMIT 1",guid);
-
-    WorldPacket data( SMSG_GMTICKET_DELETETICKET, 4 );
-    data << uint32(9);
-    SendPacket( &data );
-
-    SendGMTicketGetTicket(0x0A, 0);
-}
-
-void WorldSession::HandleGMTicketCreateOpcode( WorldPacket & recv_data )
-{
-    CHECK_PACKET_SIZE(recv_data, 4*4+1+2*4);
-
-    uint32 map;
-    float x, y, z;
-    std::string ticketText = "";
-    uint32 unk1, unk2;
-
-    recv_data >> map >> x >> y >> z;                        // last check 2.4.3
-    recv_data >> ticketText;
-
-    // recheck
-    CHECK_PACKET_SIZE(recv_data,4*4+(ticketText.size()+1)+2*4);
-
-    recv_data >> unk1 >> unk2;
-    // note: the packet might contain more data, but the exact structure of that is unknown
-
-    sLog.outDebug("TicketCreate: map %u, x %f, y %f, z %f, text %s, unk1 %u, unk2 %u", map, x, y, z, ticketText.c_str(), unk1, unk2);
-
-    CharacterDatabase.escape_string(ticketText);
-
-    QueryResult *result = CharacterDatabase.PQuery("SELECT COUNT(*) FROM character_ticket WHERE guid = '%u'", _player->GetGUIDLow());
-
-    if (result)
-    {
-        int cnt;
-        Field *fields = result->Fetch();
-        cnt = fields[0].GetUInt32();
-        delete result;
-
-        if ( cnt > 0 )
-        {
-            WorldPacket data( SMSG_GMTICKET_CREATE, 4 );
-            data << uint32(1);
-            SendPacket( &data );
-        }
-        else
-        {
-            CharacterDatabase.PExecute("INSERT INTO character_ticket (guid,ticket_text) VALUES ('%u', '%s')", _player->GetGUIDLow(), ticketText.c_str());
-
-            WorldPacket data( SMSG_QUERY_TIME_RESPONSE, 4+4 );
-            data << (uint32)time(NULL);
-            data << (uint32)0;
-            SendPacket( &data );
-
-            data.Initialize( SMSG_GMTICKET_CREATE, 4 );
-            data << uint32(2);
-            SendPacket( &data );
-            DEBUG_LOG("update the ticket\n");
-
-            //TODO: Guard player map
-            HashMapHolder<Player>::MapType &m = ObjectAccessor::Instance().GetPlayers();
-            for(HashMapHolder<Player>::MapType::iterator itr = m.begin(); itr != m.end(); ++itr)
-            {
-                if(itr->second->GetSession()->GetSecurity() >= SEC_GAMEMASTER && itr->second->isAcceptTickets())
-                    ChatHandler(itr->second).PSendSysMessage(LANG_COMMAND_TICKETNEW,GetPlayer()->GetName());
-            }
-        }
-    }
-}
-
-void WorldSession::HandleGMTicketSystemStatusOpcode( WorldPacket & /*recv_data*/ )
-{
-    WorldPacket data( SMSG_GMTICKET_SYSTEMSTATUS,4 );
-    data << uint32(1);                                      // we can also disable ticket system by sending 0 value
-
-    SendPacket( &data );
-}
-
-void WorldSession::HandleGMSurveySubmit( WorldPacket & recv_data)
-{
-    // GM survey is shown after SMSG_GM_TICKET_STATUS_UPDATE with status = 3
-    CHECK_PACKET_SIZE(recv_data,4+4);
-    uint32 x;
-    recv_data >> x;                                         // answer range? (6 = 0-5?)
-    sLog.outDebug("SURVEY: X = %u", x);
-
-    uint8 result[10];
-    memset(result, 0, sizeof(result));
-    for( int i = 0; i < 10; ++i)
-    {
-        CHECK_PACKET_SIZE(recv_data,recv_data.rpos()+4);
-        uint32 questionID;
-        recv_data >> questionID;                            // GMSurveyQuestions.dbc
-        if (!questionID)
-            break;
-
-        CHECK_PACKET_SIZE(recv_data,recv_data.rpos()+1+1);
-        uint8 value;
-        std::string unk_text;
-        recv_data >> value;                                 // answer
-        recv_data >> unk_text;                              // always empty?
-
-        result[i] = value;
-        sLog.outDebug("SURVEY: ID %u, value %u, text %s", questionID, value, unk_text.c_str());
-    }
-
-    CHECK_PACKET_SIZE(recv_data,recv_data.rpos()+1);
-    std::string comment;
-    recv_data >> comment;                                   // addional comment
-    sLog.outDebug("SURVEY: comment %s", comment.c_str());
-
-    // TODO: chart this data in some way
 }
 
 void WorldSession::HandleTogglePvP( WorldPacket & recv_data )
@@ -640,11 +452,8 @@ void WorldSession::HandleAddFriendOpcode( WorldPacket & recv_data )
 
     sLog.outDebug( "WORLD: Received CMSG_ADD_FRIEND" );
 
-    std::string friendName  = GetMangosString(LANG_FRIEND_IGNORE_UNKNOWN);
+    std::string friendName = GetMangosString(LANG_FRIEND_IGNORE_UNKNOWN);
     std::string friendNote;
-    FriendsResult friendResult = FRIEND_NOT_FOUND;
-    Player *pFriend     = NULL;
-    uint64 friendGuid   = 0;
 
     recv_data >> friendName;
 
@@ -661,50 +470,51 @@ void WorldSession::HandleAddFriendOpcode( WorldPacket & recv_data )
     sLog.outDebug( "WORLD: %s asked to add friend : '%s'",
         GetPlayer()->GetName(), friendName.c_str() );
 
-    friendGuid = objmgr.GetPlayerGUIDByName(friendName);
+    CharacterDatabase.AsyncPQuery(&WorldSession::HandleAddFriendOpcodeCallBack, GetAccountId(), friendNote, "SELECT guid, race FROM characters WHERE name = '%s'", friendName.c_str());
+}
 
+void WorldSession::HandleAddFriendOpcodeCallBack(QueryResult *result, uint32 accountId, std::string friendNote)
+{
+    if(!result)
+        return;
+
+    uint64 friendGuid = MAKE_NEW_GUID((*result)[0].GetUInt32(), 0, HIGHGUID_PLAYER);
+    uint32 team = Player::TeamForRace((*result)[1].GetUInt8());
+
+    delete result;
+
+    WorldSession * session = sWorld.FindSession(accountId);
+    if(!session || !session->GetPlayer())
+        return;
+
+    FriendsResult friendResult = FRIEND_NOT_FOUND;
     if(friendGuid)
     {
-        pFriend = ObjectAccessor::FindPlayer(friendGuid);
-        if(pFriend==GetPlayer())
+        if(friendGuid==session->GetPlayer()->GetGUID())
             friendResult = FRIEND_SELF;
-        else if(GetPlayer()->GetTeam()!=objmgr.GetPlayerTeamByGUID(friendGuid) && !sWorld.getConfig(CONFIG_ALLOW_TWO_SIDE_ADD_FRIEND) && GetSecurity() < SEC_MODERATOR)
+        else if(session->GetPlayer()->GetTeam() != team && !sWorld.getConfig(CONFIG_ALLOW_TWO_SIDE_ADD_FRIEND) && session->GetSecurity() < SEC_MODERATOR)
             friendResult = FRIEND_ENEMY;
-        else if(GetPlayer()->GetSocial()->HasFriend(GUID_LOPART(friendGuid)))
+        else if(session->GetPlayer()->GetSocial()->HasFriend(GUID_LOPART(friendGuid)))
             friendResult = FRIEND_ALREADY;
-    }
-
-    if (friendGuid && friendResult==FRIEND_NOT_FOUND)
-    {
-        if( pFriend && pFriend->IsInWorld() && pFriend->IsVisibleGloballyFor(GetPlayer()))
-            friendResult = FRIEND_ADDED_ONLINE;
         else
-            friendResult = FRIEND_ADDED_OFFLINE;
-
-        if(!_player->GetSocial()->AddToSocialList(GUID_LOPART(friendGuid), false))
         {
-            friendResult = FRIEND_LIST_FULL;
-            sLog.outDebug( "WORLD: %s's friend list is full.", GetPlayer()->GetName());
+            Player* pFriend = ObjectAccessor::FindPlayer(friendGuid);
+            if( pFriend && pFriend->IsInWorld() && pFriend->IsVisibleGloballyFor(session->GetPlayer()))
+                friendResult = FRIEND_ADDED_ONLINE;
+            else
+                friendResult = FRIEND_ADDED_OFFLINE;
+
+            if(!session->GetPlayer()->GetSocial()->AddToSocialList(GUID_LOPART(friendGuid), false))
+            {
+                friendResult = FRIEND_LIST_FULL;
+                sLog.outDebug( "WORLD: %s's friend list is full.", session->GetPlayer()->GetName());
+            }
+
+            session->GetPlayer()->GetSocial()->SetFriendNote(GUID_LOPART(friendGuid), friendNote);
         }
-
-        _player->GetSocial()->SetFriendNote(GUID_LOPART(friendGuid), friendNote);
-
-        sLog.outDebug( "WORLD: %s Guid found '%u'.", friendName.c_str(), GUID_LOPART(friendGuid));
-    }
-    else if(friendResult==FRIEND_ALREADY)
-    {
-        sLog.outDebug( "WORLD: %s Guid Already a Friend.", friendName.c_str() );
-    }
-    else if(friendResult==FRIEND_SELF)
-    {
-        sLog.outDebug( "WORLD: %s Guid can't add himself.", friendName.c_str() );
-    }
-    else
-    {
-        sLog.outDebug( "WORLD: %s Guid not found.", friendName.c_str() );
     }
 
-    sSocialMgr.SendFriendStatus(GetPlayer(), friendResult, GUID_LOPART(friendGuid), friendName, false);
+    sSocialMgr.SendFriendStatus(session->GetPlayer(), friendResult, GUID_LOPART(friendGuid), false);
 
     sLog.outDebug( "WORLD: Sent (SMSG_FRIEND_STATUS)" );
 }
@@ -721,7 +531,7 @@ void WorldSession::HandleDelFriendOpcode( WorldPacket & recv_data )
 
     _player->GetSocial()->RemoveFromSocialList(GUID_LOPART(FriendGUID), false);
 
-    sSocialMgr.SendFriendStatus(GetPlayer(), FRIEND_REMOVED, GUID_LOPART(FriendGUID), "", false);
+    sSocialMgr.SendFriendStatus(GetPlayer(), FRIEND_REMOVED, GUID_LOPART(FriendGUID), false);
 
     sLog.outDebug( "WORLD: Sent motd (SMSG_FRIEND_STATUS)" );
 }
@@ -733,8 +543,6 @@ void WorldSession::HandleAddIgnoreOpcode( WorldPacket & recv_data )
     sLog.outDebug( "WORLD: Received CMSG_ADD_IGNORE" );
 
     std::string IgnoreName = GetMangosString(LANG_FRIEND_IGNORE_UNKNOWN);
-    FriendsResult ignoreResult = FRIEND_IGNORE_NOT_FOUND;
-    uint64 IgnoreGuid = 0;
 
     recv_data >> IgnoreName;
 
@@ -746,40 +554,40 @@ void WorldSession::HandleAddIgnoreOpcode( WorldPacket & recv_data )
     sLog.outDebug( "WORLD: %s asked to Ignore: '%s'",
         GetPlayer()->GetName(), IgnoreName.c_str() );
 
-    IgnoreGuid = objmgr.GetPlayerGUIDByName(IgnoreName);
+    CharacterDatabase.AsyncPQuery(&WorldSession::HandleAddIgnoreOpcodeCallBack, GetAccountId(), "SELECT guid FROM characters WHERE name = '%s'", IgnoreName.c_str());
+}
 
+void WorldSession::HandleAddIgnoreOpcodeCallBack(QueryResult *result, uint32 accountId)
+{
+    if(!result)
+        return;
+
+    uint64 IgnoreGuid = MAKE_NEW_GUID((*result)[0].GetUInt32(), 0, HIGHGUID_PLAYER);
+
+    delete result;
+
+    WorldSession * session = sWorld.FindSession(accountId);
+    if(!session || !session->GetPlayer())
+        return;
+
+    FriendsResult ignoreResult = FRIEND_IGNORE_NOT_FOUND;
     if(IgnoreGuid)
     {
-        if(IgnoreGuid==GetPlayer()->GetGUID())
+        if(IgnoreGuid==session->GetPlayer()->GetGUID())              //not add yourself
             ignoreResult = FRIEND_IGNORE_SELF;
+        else if( session->GetPlayer()->GetSocial()->HasIgnore(GUID_LOPART(IgnoreGuid)) )
+            ignoreResult = FRIEND_IGNORE_ALREADY;
         else
         {
-            if( GetPlayer()->GetSocial()->HasIgnore(GUID_LOPART(IgnoreGuid)) )
-                ignoreResult = FRIEND_IGNORE_ALREADY;
+            ignoreResult = FRIEND_IGNORE_ADDED;
+
+            // ignore list full
+            if(!session->GetPlayer()->GetSocial()->AddToSocialList(GUID_LOPART(IgnoreGuid), true))
+                ignoreResult = FRIEND_IGNORE_FULL;
         }
     }
 
-    if (IgnoreGuid && ignoreResult == FRIEND_IGNORE_NOT_FOUND)
-    {
-        ignoreResult = FRIEND_IGNORE_ADDED;
-
-        if(!_player->GetSocial()->AddToSocialList(GUID_LOPART(IgnoreGuid), true))
-            ignoreResult = FRIEND_IGNORE_FULL;
-    }
-    else if(ignoreResult==FRIEND_IGNORE_ALREADY)
-    {
-        sLog.outDebug( "WORLD: %s Guid Already Ignored.", IgnoreName.c_str() );
-    }
-    else if(ignoreResult==FRIEND_IGNORE_SELF)
-    {
-        sLog.outDebug( "WORLD: %s Guid can't add himself.", IgnoreName.c_str() );
-    }
-    else
-    {
-        sLog.outDebug( "WORLD: %s Guid not found.", IgnoreName.c_str() );
-    }
-
-    sSocialMgr.SendFriendStatus(GetPlayer(), ignoreResult, GUID_LOPART(IgnoreGuid), "", false);
+    sSocialMgr.SendFriendStatus(session->GetPlayer(), ignoreResult, GUID_LOPART(IgnoreGuid), false);
 
     sLog.outDebug( "WORLD: Sent (SMSG_FRIEND_STATUS)" );
 }
@@ -796,7 +604,7 @@ void WorldSession::HandleDelIgnoreOpcode( WorldPacket & recv_data )
 
     _player->GetSocial()->RemoveFromSocialList(GUID_LOPART(IgnoreGUID), true);
 
-    sSocialMgr.SendFriendStatus(GetPlayer(), FRIEND_IGNORE_REMOVED, GUID_LOPART(IgnoreGUID), "", false);
+    sSocialMgr.SendFriendStatus(GetPlayer(), FRIEND_IGNORE_REMOVED, GUID_LOPART(IgnoreGUID), false);
 
     sLog.outDebug( "WORLD: Sent motd (SMSG_FRIEND_STATUS)" );
 }
@@ -845,6 +653,10 @@ void WorldSession::HandleCorpseReclaimOpcode(WorldPacket &recv_data)
 
     sLog.outDetail("WORLD: Received CMSG_RECLAIM_CORPSE");
     if (GetPlayer()->isAlive())
+        return;
+
+    // do not allow corpse reclaim in arena
+    if (GetPlayer()->InArena())
         return;
 
     // body not released yet
@@ -1441,7 +1253,7 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
         return;
     }
 
-    if(charname.empty())
+    if(charname.empty() || !normalizePlayerName (charname))
     {
         SendNotification(LANG_NEED_CHARACTER_NAME);
         return;
@@ -1568,7 +1380,7 @@ void WorldSession::HandleFarSightOpcode( WorldPacket & recv_data )
             sLog.outDebug("Removed FarSight from player %u", _player->GetGUIDLow());
             break;
         case 1:
-            sLog.outDebug("Added FarSight " I64FMTD " to player %u", _player->GetUInt64Value(PLAYER_FARSIGHT), _player->GetGUIDLow());
+            sLog.outDebug("Added FarSight " I64FMT " to player %u", _player->GetFarSight(), _player->GetGUIDLow());
             break;
     }
 }
@@ -1583,9 +1395,9 @@ void WorldSession::HandleChooseTitleOpcode( WorldPacket & recv_data )
     recv_data >> title;
 
     // -1 at none
-    if(title > 0 && title < 64)
+    if(title > 0 && title < 128)
     {
-       if(!GetPlayer()->HasFlag64(PLAYER__FIELD_KNOWN_TITLES,uint64(1) << title))
+       if(!GetPlayer()->HasTitle(title))
             return;
     }
     else

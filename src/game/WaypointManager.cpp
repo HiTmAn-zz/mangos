@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,20 +22,30 @@
 #include "WaypointManager.h"
 #include "ProgressBar.h"
 #include "MapManager.h"
+#include "ObjectMgr.h"
 
 INSTANTIATE_SINGLETON_1(WaypointManager);
 
 bool WaypointBehavior::isEmpty()
 {
-    return emote == 0 && spell == 0 && model1 == 0 && model2 == 0 && text[0].empty() &&
-        text[1].empty() && text[2].empty() && text[3].empty() && text[4].empty();
+    if (emote || spell || model1 || model2)
+        return false;
+
+    for(int i = 0; i < MAX_WAYPOINT_TEXT; ++i)
+        if(textid[i])
+            return false;
+
+    return true;
 }
 
 WaypointBehavior::WaypointBehavior(const WaypointBehavior &b)
 {
-    emote = b.emote; spell = b.spell; model1 = b.model1; model2 = b.model2;
-    text[0] = b.text[0]; text[1] = b.text[1]; text[2] = b.text[2];
-    text[3] = b.text[3]; text[4] = b.text[4];
+    emote = b.emote;
+    spell = b.spell;
+    model1 = b.model1;
+    model2 = b.model2;
+    for(int i=0; i < MAX_WAYPOINT_TEXT; ++i)
+        textid[i] = b.textid[i];
 }
 
 void WaypointManager::Load()
@@ -47,85 +57,105 @@ void WaypointManager::Load()
     uint32 total_behaviors = 0;
 
     QueryResult *result = WorldDatabase.Query("SELECT id, COUNT(point) FROM creature_movement GROUP BY id");
-    if(result)
+
+    if(!result)
     {
+        barGoLink bar(1);
+        bar.step();
+        sLog.outString();
+        sLog.outString( ">> Loaded 0 paths. DB table `creature_movement` is empty." );
+        return;
+    } else {
         total_paths = result->GetRowCount();
         barGoLink bar( total_paths );
         do
         {
+            bar.step();
             Field *fields = result->Fetch();
             uint32 id    = fields[0].GetUInt32();
             uint32 count = fields[1].GetUInt32();
             m_pathMap[id].resize(count);
-
             total_nodes += count;
-            bar.step();
         } while( result->NextRow() );
         delete result;
+
+        sLog.outString();
+        sLog.outString( ">> Paths loaded" );
     }
 
-    result = WorldDatabase.Query("SELECT position_x, position_y, position_z, orientation, model1, model2, waittime, emote, spell, text1, text2, text3, text4, text5, id, point FROM creature_movement");
-    if(result)
+    result = WorldDatabase.Query("SELECT position_x, position_y, position_z, orientation, model1, model2, waittime, emote, spell, textid1, textid2, textid3, textid4, textid5, id, point FROM creature_movement");
+
+    barGoLink bar( result->GetRowCount() );
+    do
     {
-        barGoLink bar( result->GetRowCount() );
-        do
+        bar.step();
+        Field *fields = result->Fetch();
+        uint32 point        = fields[15].GetUInt32();
+        uint32 id           = fields[14].GetUInt32();
+        WaypointPath &path  = m_pathMap[id];
+        // the cleanup queries make sure the following is true
+        assert(point >= 1 && point <= path.size());
+        WaypointNode &node  = path[point-1];
+
+        node.x              = fields[0].GetFloat();
+        node.y              = fields[1].GetFloat();
+        node.z              = fields[2].GetFloat();
+        node.orientation    = fields[3].GetFloat();
+        node.delay          = fields[6].GetUInt16();
+
+        // prevent using invalid coordinates
+        if(!MaNGOS::IsValidMapCoord(node.x, node.y, node.z, node.orientation))
         {
-            Field *fields = result->Fetch();
-            uint32 point        = fields[15].GetUInt32();
-            uint32 id           = fields[14].GetUInt32();
-
-            WaypointPath &path  = m_pathMap[id];
-            // the cleanup queries make sure the following is true
-            assert(point >= 1 && point <= path.size());
-            WaypointNode &node  = path[point-1];
-
-            node.x              = fields[0].GetFloat();
-            node.y              = fields[1].GetFloat();
-            node.z              = fields[2].GetFloat();
-            node.orientation    = fields[3].GetFloat();
-            node.delay          = fields[6].GetUInt16();
-
-            // prevent using invalid coordinates
-            if(!MaNGOS::IsValidMapCoord(node.x, node.y, node.z, node.orientation))
-            {
-                QueryResult *result1 = WorldDatabase.PQuery("SELECT id, map FROM creature WHERE guid = '%u'", id);
-                if(result1) sLog.outErrorDb("ERROR: Creature (guidlow %d, entry %d) have invalid coordinates in his waypoint %d (X: %d, Y: %d).", id, result1->Fetch()[0].GetUInt32(), point, node.x, node.y);
-                else sLog.outErrorDb("ERROR: Waypoint path %d, have invalid coordinates in his waypoint %d (X: %d, Y: %d).", id, point, node.x, node.y);
-
-                MaNGOS::NormalizeMapCoord(node.x);
-                MaNGOS::NormalizeMapCoord(node.y);
-                if(result1)
-                {
-                    node.z = MapManager::Instance ().GetBaseMap(result1->Fetch()[1].GetUInt32())->GetHeight(node.x, node.y, node.z);
-                    delete result1;
-                }
-                WorldDatabase.PExecute("UPDATE creature_movement SET position_x = '%f', position_y = '%f', position_z = '%f' WHERE id = '%u' AND point = '%u'", node.x, node.y, node.z, id, point);
-            }
-
-            WaypointBehavior be;
-            be.model1           = fields[4].GetUInt32();
-            be.model2           = fields[5].GetUInt32();
-            be.emote            = fields[7].GetUInt32();
-            be.spell            = fields[8].GetUInt32();
-            be.text[0]          = fields[9].GetCppString();
-            be.text[1]          = fields[10].GetCppString();
-            be.text[2]          = fields[11].GetCppString();
-            be.text[3]          = fields[12].GetCppString();
-            be.text[4]          = fields[13].GetCppString();
-
-            // save memory by not storing empty behaviors
-            if(!be.isEmpty())
-            {
-                node.behavior   = new WaypointBehavior(be);
-                ++total_behaviors;
-            }
+            QueryResult *result1 = WorldDatabase.PQuery("SELECT id, map FROM creature WHERE guid = '%u'", id);
+            if(result1)
+                sLog.outErrorDb("ERROR: Creature (guidlow %d, entry %d) have invalid coordinates in his waypoint %d (X: %f, Y: %f).",
+                    id, result1->Fetch()[0].GetUInt32(), point, node.x, node.y);
             else
-                node.behavior   = NULL;
-            bar.step();
-        } while( result->NextRow() );
-        delete result;
-    }
-    sLog.outString( ">> Loaded %u paths, %u nodes and %u behaviors", total_paths, total_nodes, total_behaviors);
+                sLog.outErrorDb("ERROR: Waypoint path %d, have invalid coordinates in his waypoint %d (X: %f, Y: %f).",
+                    id, point, node.x, node.y);
+
+            MaNGOS::NormalizeMapCoord(node.x);
+            MaNGOS::NormalizeMapCoord(node.y);
+            if(result1)
+            {
+                node.z = MapManager::Instance ().GetBaseMap(result1->Fetch()[1].GetUInt32())->GetHeight(node.x, node.y, node.z);
+                delete result1;
+            }
+            WorldDatabase.PExecute("UPDATE creature_movement SET position_x = '%f', position_y = '%f', position_z = '%f' WHERE id = '%u' AND point = '%u'", node.x, node.y, node.z, id, point);
+        }
+        WaypointBehavior be;
+        be.model1           = fields[4].GetUInt32();
+        be.model2           = fields[5].GetUInt32();
+        be.emote            = fields[7].GetUInt32();
+        be.spell            = fields[8].GetUInt32();
+        for(int i = 0; i < MAX_WAYPOINT_TEXT; ++i)
+        {
+            be.textid[i]        = fields[9+i].GetUInt32();
+            if(be.textid[i])
+            {
+                if (be.textid[i] < MIN_DB_SCRIPT_STRING_ID || be.textid[i] >= MAX_DB_SCRIPT_STRING_ID)
+                {
+                    sLog.outErrorDb( "Table `db_script_string` not have string id  %u", be.textid[i]);
+                    continue;
+                }
+            }
+        }
+
+        // save memory by not storing empty behaviors
+        if(!be.isEmpty())
+        {
+            node.behavior   = new WaypointBehavior(be);
+            ++total_behaviors;
+        }
+        else
+            node.behavior   = NULL;
+    } while( result->NextRow() );
+    delete result;
+
+    sLog.outString();
+    sLog.outString( ">> Waypoints and behaviors loaded" );
+    sLog.outString();
+    sLog.outString( ">>> Loaded %u paths, %u nodes and %u behaviors", total_paths, total_nodes, total_behaviors);
 }
 
 void WaypointManager::Cleanup()
@@ -259,14 +289,61 @@ void WaypointManager::SetNodeText(uint32 id, uint32 point, const char *text_fiel
         WaypointNode &node = itr->second[point-1];
         if(!node.behavior) node.behavior = new WaypointBehavior();
 
-        if(field == "text1") node.behavior->text[0] = text ? text : "";
-        if(field == "text2") node.behavior->text[1] = text ? text : "";
-        if(field == "text3") node.behavior->text[2] = text ? text : "";
-        if(field == "text4") node.behavior->text[3] = text ? text : "";
-        if(field == "text5") node.behavior->text[4] = text ? text : "";
+//        if(field == "text1") node.behavior->text[0] = text ? text : "";
+//        if(field == "text2") node.behavior->text[1] = text ? text : "";
+//        if(field == "text3") node.behavior->text[2] = text ? text : "";
+//        if(field == "text4") node.behavior->text[3] = text ? text : "";
+//        if(field == "text5") node.behavior->text[4] = text ? text : "";
         if(field == "emote") node.behavior->emote   = text ? atoi(text) : 0;
         if(field == "spell") node.behavior->spell   = text ? atoi(text) : 0;
         if(field == "model1") node.behavior->model1 = text ? atoi(text) : 0;
         if(field == "model2") node.behavior->model2 = text ? atoi(text) : 0;
+    }
+}
+
+void WaypointManager::CheckTextsExistance(std::set<int32>& ids)
+{
+    WaypointPathMap::iterator pmItr = m_pathMap.begin();
+    for ( ; pmItr != m_pathMap.end(); ++pmItr)
+    {
+        for (int i = 0; i < pmItr->second.size(); ++i)
+        {
+            WaypointBehavior* be = pmItr->second[i].behavior;
+            if (!be)
+                continue;
+
+            // Now we check text existence and put all zero texts ids to the end of array
+
+            // Counting leading zeros for futher textid shift
+            int zeroCount = 0;
+            for (int j = 0; j < MAX_WAYPOINT_TEXT; ++j)
+            {
+                if (!be->textid[j])
+                {
+                    ++zeroCount;
+                    continue;
+                }
+                else
+                {
+                    if (!objmgr.GetMangosStringLocale(be->textid[j]))
+                    {
+                        sLog.outErrorDb("ERROR: Some waypoint has textid%u with not existing %u text.", j, be->textid[j]);
+                        be->textid[j] = 0;
+                        ++zeroCount;
+                        continue;
+                    }
+                    else
+                        ids.erase(be->textid[j]);
+
+                    // Shifting check
+                    if (zeroCount)
+                    {
+                        // Correct textid but some zeros leading, so move it forward.
+                        be->textid[j-zeroCount] = be->textid[j];
+                        be->textid[j] = 0;
+                    }
+                }
+            }
+        }
     }
 }

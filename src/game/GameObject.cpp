@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,7 +62,7 @@ GameObject::~GameObject()
 {
     if(m_uint32Values)                                      // field array can be not exist if GameOBject not loaded
     {
-        // crash possable at access to deleted GO in Unit::m_gameobj
+        // crash possible at access to deleted GO in Unit::m_gameobj
         uint64 owner_guid = GetOwnerGUID();
         if(owner_guid)
         {
@@ -70,7 +70,7 @@ GameObject::~GameObject()
             if(owner)
                 owner->RemoveGameObject(this,false);
             else if(!IS_PLAYER_GUID(owner_guid))
-                sLog.outError("Delete GameObject (GUID: %u Entry: %u ) that have references in not found creature %u GO list. Crash possable later.",GetGUIDLow(),GetGOInfo()->id,GUID_LOPART(owner_guid));
+                sLog.outError("Delete GameObject (GUID: %u Entry: %u ) that have references in not found creature %u GO list. Crash possible later.",GetGUIDLow(),GetGOInfo()->id,GUID_LOPART(owner_guid));
         }
     }
 }
@@ -190,7 +190,7 @@ void GameObject::Update(uint32 /*p_time*/)
                         if(caster && caster->GetTypeId()==TYPEID_PLAYER)
                         {
                             SetGoState(0);
-                            SetUInt32Value(GAMEOBJECT_FLAGS, 32);
+                            SetUInt32Value(GAMEOBJECT_FLAGS, GO_FLAG_NODESPAWN);
 
                             UpdateData udata;
                             WorldPacket packet;
@@ -204,7 +204,7 @@ void GameObject::Update(uint32 /*p_time*/)
                             ((Player*)caster)->SendMessageToSet(&data,true);
                         }
 
-                        m_lootState = GO_READY;                 // can be succesfully open with some chance
+                        m_lootState = GO_READY;                 // can be successfully open with some chance
                     }
                     return;
                 }
@@ -258,7 +258,7 @@ void GameObject::Update(uint32 /*p_time*/)
                                 return;
                             }
                                                             // respawn timer
-                            MapManager::Instance().GetMap(GetMapId(), this)->Add(this);
+                            GetMap()->Add(this);
                             break;
                     }
                 }
@@ -281,7 +281,7 @@ void GameObject::Update(uint32 /*p_time*/)
                 float radius = goInfo->trap.radius;
                 if(!radius)
                 {
-                    if(goInfo->trap.cooldown != 3)            // cast in other case (at some triggring/linked go/etc explicit call)
+                    if(goInfo->trap.cooldown != 3)            // cast in other case (at some triggering/linked go/etc explicit call)
                         return;
                     else
                     {
@@ -309,13 +309,13 @@ void GameObject::Update(uint32 /*p_time*/)
                     CellLock<GridReadGuard> cell_lock(cell, p);
 
                     TypeContainerVisitor<MaNGOS::UnitSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck>, GridTypeMapContainer > grid_object_checker(checker);
-                    cell_lock->Visit(cell_lock, grid_object_checker, *MapManager::Instance().GetMap(GetMapId(), this));
+                    cell_lock->Visit(cell_lock, grid_object_checker, *GetMap());
 
                     // or unfriendly player/pet
                     if(!ok)
                     {
                         TypeContainerVisitor<MaNGOS::UnitSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck>, WorldTypeMapContainer > world_object_checker(checker);
-                        cell_lock->Visit(cell_lock, world_object_checker, *MapManager::Instance().GetMap(GetMapId(), this));
+                        cell_lock->Visit(cell_lock, world_object_checker, *GetMap());
                     }
                 }
                 else                                        // environmental trap
@@ -330,7 +330,7 @@ void GameObject::Update(uint32 /*p_time*/)
                     CellLock<GridReadGuard> cell_lock(cell, p);
 
                     TypeContainerVisitor<MaNGOS::PlayerSearcher<MaNGOS::AnyPlayerInObjectRangeCheck>, WorldTypeMapContainer > world_object_checker(checker);
-                    cell_lock->Visit(cell_lock, world_object_checker, *MapManager::Instance().GetMap(GetMapId(), this));
+                    cell_lock->Visit(cell_lock, world_object_checker, *GetMap());
                     ok = p_ok;
                 }
 
@@ -407,7 +407,7 @@ void GameObject::Update(uint32 /*p_time*/)
             //burning flags in some battlegrounds, if you find better condition, just add it
             if (GetGoAnimProgress() > 0)
             {
-                SendObjectDeSpawnAnim(this->GetGUID());
+                SendObjectDeSpawnAnim(GetGUID());
                 //reset flags
                 SetUInt32Value(GAMEOBJECT_FLAGS, GetGOInfo()->flags);
             }
@@ -444,7 +444,7 @@ void GameObject::Refresh()
         return;
 
     if(isSpawned())
-        MapManager::Instance().GetMap(GetMapId(), this)->Add(this);
+        GetMap()->Add(this);
 }
 
 void GameObject::AddUniqueUse(Player* player)
@@ -463,7 +463,7 @@ void GameObject::Delete()
     AddObjectToRemoveList();
 }
 
-void GameObject::getFishLoot(Loot *fishloot)
+void GameObject::getFishLoot(Loot *fishloot, Player* loot_owner)
 {
     fishloot->clear();
 
@@ -471,16 +471,16 @@ void GameObject::getFishLoot(Loot *fishloot)
 
     // if subzone loot exist use it
     if(LootTemplates_Fishing.HaveLootFor(subzone))
-        fishloot->FillLoot(subzone, LootTemplates_Fishing, NULL);
+        fishloot->FillLoot(subzone, LootTemplates_Fishing, loot_owner,true);
     // else use zone loot
     else
-        fishloot->FillLoot(GetZoneId(), LootTemplates_Fishing, NULL);
+        fishloot->FillLoot(GetZoneId(), LootTemplates_Fishing, loot_owner,true);
 }
 
 void GameObject::SaveToDB()
 {
     // this should only be used when the gameobject has already been loaded
-    // perferably after adding to map, because mapid may not be valid otherwise
+    // preferably after adding to map, because mapid may not be valid otherwise
     GameObjectData const *data = objmgr.GetGOData(m_DBTableGuid);
     if(!data)
     {
@@ -555,7 +555,7 @@ bool GameObject::LoadFromDB(uint32 guid, Map *map)
     }
 
     uint32 entry = data->id;
-    uint32 map_id = data->mapid;
+    //uint32 map_id = data->mapid;                          // already used before call
     float x = data->posX;
     float y = data->posY;
     float z = data->posZ;
@@ -723,7 +723,7 @@ bool GameObject::isVisibleForInState(Player const* u, bool inVisibleList) const
 
     // check distance
     return IsWithinDistInMap(u,World::GetMaxVisibleDistanceForObject() +
-        (inVisibleList ? World::GetVisibleObjectGreyDistance() : 0.0f) );
+        (inVisibleList ? World::GetVisibleObjectGreyDistance() : 0.0f), false);
 }
 
 void GameObject::Respawn()
@@ -787,7 +787,7 @@ void GameObject::TriggeringLinkedGameObject( uint32 trapEntry, Unit* target)
 
         TypeContainerVisitor<MaNGOS::GameObjectLastSearcher<MaNGOS::NearestGameObjectEntryInObjectRangeCheck>, GridTypeMapContainer > object_checker(checker);
         CellLock<GridReadGuard> cell_lock(cell, p);
-        cell_lock->Visit(cell_lock, object_checker, *MapManager::Instance().GetMap(GetMapId(), this));
+        cell_lock->Visit(cell_lock, object_checker, *GetMap());
     }
 
     // found correct GO
@@ -809,7 +809,7 @@ GameObject* GameObject::LookupFishingHoleAround(float range)
     CellLock<GridReadGuard> cell_lock(cell, p);
 
     TypeContainerVisitor<MaNGOS::GameObjectSearcher<MaNGOS::NearestGameObjectFishingHole>, GridTypeMapContainer > grid_object_checker(checker);
-    cell_lock->Visit(cell_lock, grid_object_checker, *MapManager::Instance().GetMap(GetMapId(), this));
+    cell_lock->Visit(cell_lock, grid_object_checker, *GetMap());
 
     return ok;
 }
@@ -1244,4 +1244,20 @@ void GameObject::Use(Unit* user)
     targets.setUnitTarget( user );
 
     spell->prepare(&targets);
+}
+
+// overwrite WorldObject function for proper name localization
+const char* GameObject::GetNameForLocaleIdx(int32 loc_idx) const
+{
+    if (loc_idx >= 0)
+    {
+        GameObjectLocale const *cl = objmgr.GetGameObjectLocale(GetEntry());
+        if (cl)
+        {
+            if (cl->Name.size() > loc_idx && !cl->Name[loc_idx].empty())
+                return cl->Name[loc_idx].c_str();
+        }
+    }
+
+    return GetName();
 }

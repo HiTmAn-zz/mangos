@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -197,9 +197,6 @@ ObjectUpdater::Visit(GridRefManager<T> &m)
     }
 }
 
-template void ObjectUpdater::Visit<GameObject>(GameObjectMapType &);
-template void ObjectUpdater::Visit<DynamicObject>(DynamicObjectMapType &);
-
 bool CannibalizeObjectCheck::operator()(Corpse* u)
 {
     // ignore bones
@@ -216,3 +213,6 @@ bool CannibalizeObjectCheck::operator()(Corpse* u)
 
     return false;
 }
+
+template void ObjectUpdater::Visit<GameObject>(GameObjectMapType &);
+template void ObjectUpdater::Visit<DynamicObject>(DynamicObjectMapType &);

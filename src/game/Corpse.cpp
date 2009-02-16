@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -69,26 +69,26 @@ bool Corpse::Create( uint32 guidlow )
     return true;
 }
 
-bool Corpse::Create( uint32 guidlow, Player *owner, uint32 mapid, float x, float y, float z, float ang )
+bool Corpse::Create( uint32 guidlow, Player *owner)
 {
     SetInstanceId(owner->GetInstanceId());
 
-    WorldObject::_Create(guidlow, HIGHGUID_CORPSE, mapid);
+    WorldObject::_Create(guidlow, HIGHGUID_CORPSE, owner->GetMapId());
 
-    Relocate(x,y,z,ang);
+    Relocate(owner->GetPositionX(), owner->GetPositionY(), owner->GetPositionZ(), owner->GetOrientation());
 
     if(!IsPositionValid())
     {
         sLog.outError("ERROR: Corpse (guidlow %d, owner %s) not created. Suggested coordinates isn't valid (X: %f Y: %f)",
-            guidlow,owner->GetName(),x,y);
+            guidlow,owner->GetName(),owner->GetPositionX(), owner->GetPositionY());
         return false;
     }
 
     SetFloatValue( OBJECT_FIELD_SCALE_X, 1 );
-    SetFloatValue( CORPSE_FIELD_POS_X, x );
-    SetFloatValue( CORPSE_FIELD_POS_Y, y );
-    SetFloatValue( CORPSE_FIELD_POS_Z, z );
-    SetFloatValue( CORPSE_FIELD_FACING, ang );
+    SetFloatValue( CORPSE_FIELD_POS_X, GetPositionX() );
+    SetFloatValue( CORPSE_FIELD_POS_Y, GetPositionY() );
+    SetFloatValue( CORPSE_FIELD_POS_Z, GetPositionZ() );
+    SetFloatValue( CORPSE_FIELD_FACING, GetOrientation() );
     SetUInt64Value( CORPSE_FIELD_OWNER, owner->GetGUID() );
 
     m_grid = MaNGOS::ComputeGridPair(GetPositionX(), GetPositionY());
@@ -98,7 +98,7 @@ bool Corpse::Create( uint32 guidlow, Player *owner, uint32 mapid, float x, float
 
 void Corpse::SaveToDB()
 {
-    // prevent DB data inconsistance problems and duplicates
+    // prevent DB data inconsistence problems and duplicates
     CharacterDatabase.BeginTransaction();
     DeleteFromDB();
 
@@ -137,7 +137,7 @@ void Corpse::DeleteFromDB()
         CharacterDatabase.PExecute("DELETE FROM corpse WHERE player = '%d' AND corpse_type <> '0'",  GUID_LOPART(GetOwnerGUID()));
 }
 
-bool Corpse::LoadFromDB(uint32 guid, QueryResult *result, uint32 InstanceId)
+bool Corpse::LoadFromDB(uint32 guid, QueryResult *result)
 {
     bool external = (result != NULL);
     if (!external)
@@ -209,5 +209,5 @@ bool Corpse::LoadFromDB(uint32 guid, Field *fields)
 
 bool Corpse::isVisibleForInState(Player const* u, bool inVisibleList) const
 {
-    return IsInWorld() && u->IsInWorld() && IsWithinDistInMap(u,World::GetMaxVisibleDistanceForObject()+(inVisibleList ? World::GetVisibleObjectGreyDistance() : 0.0f));
+    return IsInWorld() && u->IsInWorld() && IsWithinDistInMap(u,World::GetMaxVisibleDistanceForObject()+(inVisibleList ? World::GetVisibleObjectGreyDistance() : 0.0f), false);
 }

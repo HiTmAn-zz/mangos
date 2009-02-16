@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -388,7 +388,7 @@ enum MangosStrings
     LANG_COMMAND_GRAVEYARDALRLINKED     = 450,
     LANG_COMMAND_GRAVEYARDLINKED        = 451,
     LANG_COMMAND_GRAVEYARDWRONGZONE     = 452,
-    LANG_COMMAND_GRAVEYARDWRONGTEAM     = 453,
+    //                                  = 453,
     LANG_COMMAND_GRAVEYARDERROR         = 454,
     LANG_COMMAND_GRAVEYARD_NOTEAM       = 455,
     LANG_COMMAND_GRAVEYARD_ANY          = 456,
@@ -640,12 +640,43 @@ enum MangosStrings
 
     LANG_BG_QUEUE_ANNOUNCE_SELF         = 711,
     LANG_BG_QUEUE_ANNOUNCE_WORLD        = 712,
-
     LANG_YOUR_ARENA_LEVEL_REQ_ERROR     = 713,
-    LANG_HIS_ARENA_LEVEL_REQ_ERROR      = 714,
+//                                      = 714, not used
     LANG_YOUR_BG_LEVEL_REQ_ERROR        = 715,
-    LANG_YOUR_ARENA_TEAM_FULL           = 716,
-    // Room for BG/ARENA                  717-799 not used
+//                                      = 716, not used
+    LANG_BG_STARTED_ANNOUNCE_WORLD      = 717,
+    LANG_ARENA_QUEUE_ANNOUNCE_WORLD_JOIN= 718,
+    LANG_ARENA_QUEUE_ANNOUNCE_WORLD_EXIT= 719,
+
+    LANG_BG_GROUP_TOO_LARGE             = 720,              // "Your group is too large for this battleground. Please regroup to join."
+    LANG_ARENA_GROUP_TOO_LARGE          = 721,              // "Your group is too large for this arena. Please regroup to join."
+    LANG_ARENA_YOUR_TEAM_ONLY           = 722,              // "Your group has members not in your arena team. Please regroup to join."
+    LANG_ARENA_NOT_ENOUGH_PLAYERS       = 723,              // "Your group does not have enough players to join this match."
+    LANG_ARENA_GOLD_WINS                = 724,              // "The Gold Team wins!"
+    LANG_ARENA_GREEN_WINS               = 725,              // "The Green Team wins!"
+    LANG_BATTLEGROUND_PREMATURE_FINISH_WARNING = 726,       // The battleground will end soon, because there aren't enough players. Get more ppl or win already!
+    LANG_BG_GROUP_OFFLINE_MEMBER        = 727,              // "Your group has an offline member. Please remove him before joining."
+    LANG_BG_GROUP_MIXED_FACTION         = 728,              // "Your group has players from the opposing faction. You can't join the battleground as a group."
+    LANG_BG_GROUP_MIXED_LEVELS          = 729,              // "Your group has players from different battleground brakets. You can't join as group."
+    LANG_BG_GROUP_MEMBER_ALREADY_IN_QUEUE = 730,            // "Someone in your party is already in this battleground queue. (S)he must leave it before joining as group."
+    LANG_BG_GROUP_MEMBER_DESERTER       = 731,              // "Someone in your party is Deserter. You can't join as group."
+    LANG_BG_GROUP_MEMBER_NO_FREE_QUEUE_SLOTS = 732,         // "Someone in your party is already in three battleground queues. You cannot join as group."
+
+    LANG_CANNOT_TELE_TO_BG              = 733,              // "You cannot teleport to a battleground or arena map."
+    LANG_CANNOT_SUMMON_TO_BG            = 734,              // "You cannot summon players to a battleground or arena map."
+    LANG_CANNOT_GO_TO_BG_GM             = 735,              // "You must be in GM mode to teleport to a player in a battleground."
+    LANG_CANNOT_GO_TO_BG_FROM_BG        = 736,              // "You cannot teleport to a battleground from another battleground. Please leave the current battleground first."
+    LANG_DEBUG_ARENA_ON                 = 737,
+    LANG_DEBUG_ARENA_OFF                = 738,
+    LANG_DEBUG_BG_ON                    = 739,
+    LANG_DEBUG_BG_OFF                   = 740,
+    LANG_DIST_ARENA_POINTS_START        = 741,
+    LANG_DIST_ARENA_POINTS_ONLINE_START = 742,
+    LANG_DIST_ARENA_POINTS_ONLINE_END   = 743,
+    LANG_DIST_ARENA_POINTS_TEAM_START   = 744,
+    LANG_DIST_ARENA_POINTS_TEAM_END     = 745,
+    LANG_DIST_ARENA_POINTS_END          = 746,
+    // Room for batleground/arena strings 747-799 not used
 
     // in game strings
     //                                  = 800, not used
@@ -698,7 +729,8 @@ enum MangosStrings
     LANG_MUST_MALE_OR_FEMALE            = 1119,
     LANG_YOU_CHANGE_GENDER              = 1120,
     LANG_YOUR_GENDER_CHANGED            = 1121,
-    // Room for more level 3              1122-1199 not used
+    LANG_SKILL_VALUES                   = 1122,
+    // Room for more level 3              1123-1199 not used
 
     // FREE IDS                           1200-9999
 
@@ -707,6 +739,8 @@ enum MangosStrings
 
     // Use for custom patches             11000-11999
 
-    // NOT RESERVED IDS                   12000-
+    // NOT RESERVED IDS                   12000-1999999999
+    // `db_script_string` table index     2000000000-2000009999 (MIN_DB_SCRIPT_STRING_ID-MAX_DB_SCRIPT_STRING_ID)
+    // For other tables maybe             2000010000-2147483647 (max index)
 };
 #endif

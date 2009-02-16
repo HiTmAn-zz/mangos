@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ class MANGOS_DLL_DECL PetAI : public CreatureAI
         void DamageTaken(Unit *done_by, uint32& /*damage*/) { AttackedBy(done_by); }
         void AttackedBy(Unit*);
         bool IsVisible(Unit *) const;
-        void JustDied(Unit* who) { _stopAttack(); }
+        void JustDied(Unit* /*who*/) { _stopAttack(); }
 
         void UpdateAI(const uint32);
         static int Permissible(const Creature *);

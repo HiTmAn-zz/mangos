@@ -1,4 +1,4 @@
-# Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+# Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -38,8 +38,9 @@ libmangosgame_a_SOURCES = \
     ArenaTeam.cpp \
     ArenaTeam.h \
     ArenaTeamHandler.cpp \
-    AuctionHouse.cpp \
-    AuctionHouseObject.h \
+    AuctionHouseHandler.cpp \
+    AuctionHouseMgr.cpp \
+    AuctionHouseMgr.h \
     Bag.cpp \
     Bag.h \
     BattleGround.cpp \
@@ -103,6 +104,9 @@ libmangosgame_a_SOURCES = \
     GameObject.h \
     GlobalEvents.cpp \
     GlobalEvents.h \
+    GMTicketHandler.cpp \
+    GMTicketMgr.cpp \
+    GMTicketMgr.h \
     GossipDef.cpp \
     GossipDef.h \
     GridDefines.h \
@@ -119,7 +123,6 @@ libmangosgame_a_SOURCES = \
     Guild.cpp \
     Guild.h \
     GuildHandler.cpp \
-    HateMatrix.h \
     HomeMovementGenerator.cpp \
     HomeMovementGenerator.h \
     HostilRefManager.cpp \
@@ -153,6 +156,8 @@ libmangosgame_a_SOURCES = \
     MapInstanced.h \
     MapManager.cpp \
     MapManager.h \
+    MapReference.h \
+    MapRefManager.h \
     MiscHandler.cpp \
     MotionMaster.cpp \
     MotionMaster.h \
@@ -223,8 +228,6 @@ libmangosgame_a_SOURCES = \
     TaxiHandler.cpp \
     TemporarySummon.cpp \
     TemporarySummon.h \
-    tools.cpp \
-    Tools.h \
     TotemAI.cpp \
     TotemAI.h \
     Totem.cpp \

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,23 +66,11 @@ struct Script
     bool (*pItemUse             )(Player *player, Item* _Item, SpellCastTargets const& targets);
 
     CreatureAI* (*GetAI)(Creature *_Creature);
+    InstanceData* (*GetInstanceData)(Map*);
     // -----------------------------------------
 
+    void registerSelf();
 };
-
-class InstanceDataScript
-{
-    public:
-        InstanceDataScript() : GetInstanceData(NULL) {};
-
-        std::string name;
-        InstanceData* (*GetInstanceData)(Map *_Map);
-};
-
-extern int nrscripts;
-extern Script *m_scripts[MAX_SCRIPTS];
-extern InstanceDataScript *m_instance_scripts[MAX_INSTANCE_SCRIPTS];
-extern int num_inst_scripts;
 
 #define VISIBLE_RANGE (50.0f)
 

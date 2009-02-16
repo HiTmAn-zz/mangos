@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +41,6 @@
 #include "CellImpl.h"
 #include "Policies/SingletonImp.h"
 #include "SharedDefines.h"
-#include "Tools.h"
 #include "LootMgr.h"
 #include "VMapFactory.h"
 #include "BattleGround.h"
@@ -167,15 +166,15 @@ bool SpellCastTargets::read ( WorldPacket * data, Unit *caster )
 
     // TARGET_FLAG_UNK2 is used for non-combat pets, maybe other?
     if( m_targetMask & ( TARGET_FLAG_UNIT | TARGET_FLAG_UNK2 ))
-        if(!readGUID(*data, m_unitTargetGUID))
+        if(!data->readPackGUID(m_unitTargetGUID))
             return false;
 
     if( m_targetMask & ( TARGET_FLAG_OBJECT | TARGET_FLAG_OBJECT_UNK ))
-        if(!readGUID(*data, m_GOTargetGUID))
+        if(!data->readPackGUID(m_GOTargetGUID))
             return false;
 
     if(( m_targetMask & ( TARGET_FLAG_ITEM | TARGET_FLAG_TRADE_ITEM )) && caster->GetTypeId() == TYPEID_PLAYER)
-        if(!readGUID(*data, m_itemTargetGUID))
+        if(!data->readPackGUID(m_itemTargetGUID))
             return false;
 
     if( m_targetMask & TARGET_FLAG_SOURCE_LOCATION )
@@ -207,7 +206,7 @@ bool SpellCastTargets::read ( WorldPacket * data, Unit *caster )
     }
 
     if( m_targetMask & (TARGET_FLAG_CORPSE | TARGET_FLAG_PVP_CORPSE ) )
-        if(!readGUID(*data, m_CorpseTargetGUID))
+        if(!data->readPackGUID(m_CorpseTargetGUID))
             return false;
 
     // find real units/GOs
@@ -268,7 +267,9 @@ Spell::Spell( Unit* Caster, SpellEntry const *info, bool triggered, uint64 origi
     m_caster = Caster;
     m_selfContainer = NULL;
     m_triggeringContainer = triggeringContainer;
-    m_deletable = true;
+    m_referencedFromCurrentSpell = false;
+    m_executedCurrently = false;
+    m_delayStart = 0;
     m_delayAtDamageCount = 0;
 
     m_applyMultiplierMask = 0;
@@ -345,7 +346,7 @@ Spell::Spell( Unit* Caster, SpellEntry const *info, bool triggered, uint64 origi
 
     m_powerCost = 0;                                        // setup to correct value in Spell::prepare, don't must be used before.
     m_casttime = 0;                                         // setup to correct value in Spell::prepare, don't must be used before.
-    m_timer = 0;                                            // will set to castime in preper
+    m_timer = 0;                                            // will set to castime in prepare
 
     m_needAliveTargetMask = 0;
 
@@ -474,12 +475,12 @@ void Spell::FillTargetMap()
 
                             TypeContainerVisitor<MaNGOS::WorldObjectSearcher<MaNGOS::CannibalizeObjectCheck >, GridTypeMapContainer > grid_searcher(searcher);
                             CellLock<GridReadGuard> cell_lock(cell, p);
-                            cell_lock->Visit(cell_lock, grid_searcher, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                            cell_lock->Visit(cell_lock, grid_searcher, *m_caster->GetMap());
 
                             if(!result)
                             {
                                 TypeContainerVisitor<MaNGOS::WorldObjectSearcher<MaNGOS::CannibalizeObjectCheck >, WorldTypeMapContainer > world_searcher(searcher);
-                                cell_lock->Visit(cell_lock, world_searcher, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                                cell_lock->Visit(cell_lock, world_searcher, *m_caster->GetMap());
                             }
 
                             if(result)
@@ -636,7 +637,7 @@ void Spell::FillTargetMap()
         if(m_caster->GetTypeId() == TYPEID_PLAYER)
         {
             Player *me = (Player*)m_caster;
-            for (std::list<Unit*>::const_iterator itr = tmpUnitMap.begin(); itr != tmpUnitMap.end(); itr++)
+            for (std::list<Unit*>::const_iterator itr = tmpUnitMap.begin(); itr != tmpUnitMap.end(); ++itr)
             {
                 Unit *owner = (*itr)->GetOwner();
                 Unit *u = owner ? owner : (*itr);
@@ -651,7 +652,7 @@ void Spell::FillTargetMap()
 
         for (std::list<Unit*>::iterator itr = tmpUnitMap.begin() ; itr != tmpUnitMap.end();)
         {
-            if(!CheckTarget(*itr, i, false ))
+            if (!CheckTarget (*itr, i))
             {
                 itr = tmpUnitMap.erase(itr);
                 continue;
@@ -959,6 +960,15 @@ void Spell::DoSpellHitOnUnit(Unit *unit, const uint32 effectMask)
 
     if( m_caster != unit )
     {
+        // Recheck  UNIT_FLAG_NON_ATTACKABLE for delayed spells
+        if (m_spellInfo->speed > 0.0f &&
+            unit->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE) &&
+            unit->GetCharmerOrOwnerGUID() != m_caster->GetGUID())
+        {
+            m_caster->SendSpellMiss(unit, m_spellInfo->Id, SPELL_MISS_EVADE);
+            return;
+        }
+
         if( !m_caster->IsFriendlyTo(unit) )
         {
             // for delayed spells ignore not visible explicit target
@@ -1207,8 +1217,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
                 TypeContainerVisitor<MaNGOS::UnitListSearcher<MaNGOS::AnyAoETargetUnitInObjectRangeCheck>, GridTypeMapContainer >  grid_unit_searcher(searcher);
 
                 CellLock<GridReadGuard> cell_lock(cell, p);
-                cell_lock->Visit(cell_lock, world_unit_searcher, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-                cell_lock->Visit(cell_lock, grid_unit_searcher, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                cell_lock->Visit(cell_lock, world_unit_searcher, *m_caster->GetMap());
+                cell_lock->Visit(cell_lock, grid_unit_searcher, *m_caster->GetMap());
             }
 
             if(tempUnitMap.empty())
@@ -1306,8 +1316,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
                         TypeContainerVisitor<MaNGOS::UnitListSearcher<MaNGOS::AnyAoETargetUnitInObjectRangeCheck>, GridTypeMapContainer >  grid_unit_searcher(searcher);
 
                         CellLock<GridReadGuard> cell_lock(cell, p);
-                        cell_lock->Visit(cell_lock, world_unit_searcher, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-                        cell_lock->Visit(cell_lock, grid_unit_searcher, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                        cell_lock->Visit(cell_lock, world_unit_searcher, *m_caster->GetMap());
+                        cell_lock->Visit(cell_lock, grid_unit_searcher, *m_caster->GetMap());
                     }
 
                     tempUnitMap.sort(TargetDistanceOrder(pUnitTarget));
@@ -1364,8 +1374,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
                 TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer >  grid_object_notifier(notifier);
 
                 CellLock<GridReadGuard> cell_lock(cell, p);
-                cell_lock->Visit(cell_lock, world_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-                cell_lock->Visit(cell_lock, grid_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                cell_lock->Visit(cell_lock, world_object_notifier, *m_caster->GetMap());
+                cell_lock->Visit(cell_lock, grid_object_notifier, *m_caster->GetMap());
 
                 // exclude caster (this can be important if this not original caster)
                 TagUnitMap.remove(m_caster);
@@ -1447,8 +1457,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
             TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer >  grid_object_notifier(notifier);
 
             CellLock<GridReadGuard> cell_lock(cell, p);
-            cell_lock->Visit(cell_lock, world_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-            cell_lock->Visit(cell_lock, grid_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+            cell_lock->Visit(cell_lock, world_object_notifier, *m_caster->GetMap());
+            cell_lock->Visit(cell_lock, grid_object_notifier, *m_caster->GetMap());
         }break;
         case TARGET_ALL_FRIENDLY_UNITS_AROUND_CASTER:
         {
@@ -1463,8 +1473,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
             TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer >  grid_object_notifier(notifier);
 
             CellLock<GridReadGuard> cell_lock(cell, p);
-            cell_lock->Visit(cell_lock, world_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-            cell_lock->Visit(cell_lock, grid_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+            cell_lock->Visit(cell_lock, world_object_notifier, *m_caster->GetMap());
+            cell_lock->Visit(cell_lock, grid_object_notifier, *m_caster->GetMap());
         }break;
         case TARGET_ALL_FRIENDLY_UNITS_IN_AREA:
         {
@@ -1479,10 +1489,10 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
             TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer >  grid_object_notifier(notifier);
 
             CellLock<GridReadGuard> cell_lock(cell, p);
-            cell_lock->Visit(cell_lock, world_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-            cell_lock->Visit(cell_lock, grid_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+            cell_lock->Visit(cell_lock, world_object_notifier, *m_caster->GetMap());
+            cell_lock->Visit(cell_lock, grid_object_notifier, *m_caster->GetMap());
         }break;
-        // TARGET_SINGLE_PARTY means that the spells can only be casted on a party member and not on the caster (some sceals, fire shield from imp, etc..)
+        // TARGET_SINGLE_PARTY means that the spells can only be casted on a party member and not on the caster (some seals, fire shield from imp, etc..)
         case TARGET_SINGLE_PARTY:
         {
             Unit *target = m_targets.getUnitTarget();
@@ -1556,8 +1566,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
             TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer >  grid_object_notifier(notifier);
 
             CellLock<GridReadGuard> cell_lock(cell, p);
-            cell_lock->Visit(cell_lock, world_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-            cell_lock->Visit(cell_lock, grid_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+            cell_lock->Visit(cell_lock, world_object_notifier, *m_caster->GetMap());
+            cell_lock->Visit(cell_lock, grid_object_notifier, *m_caster->GetMap());
         }break;
         case TARGET_DUELVSPLAYER:
         {
@@ -1606,8 +1616,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
                 TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer >  grid_object_notifier(notifier);
 
                 CellLock<GridReadGuard> cell_lock(cell, p);
-                cell_lock->Visit(cell_lock, world_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-                cell_lock->Visit(cell_lock, grid_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                cell_lock->Visit(cell_lock, world_object_notifier, *m_caster->GetMap());
+                cell_lock->Visit(cell_lock, grid_object_notifier, *m_caster->GetMap());
             }
         }break;
         case TARGET_MINION:
@@ -1725,8 +1735,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
                     TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer >  grid_object_notifier(notifier);
 
                     CellLock<GridReadGuard> cell_lock(cell, p);
-                    cell_lock->Visit(cell_lock, world_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-                    cell_lock->Visit(cell_lock, grid_object_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                    cell_lock->Visit(cell_lock, world_object_notifier, *m_caster->GetMap());
+                    cell_lock->Visit(cell_lock, grid_object_notifier, *m_caster->GetMap());
 
                 }
 
@@ -1790,8 +1800,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
                     TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, WorldTypeMapContainer > world_notifier(notifier);
                     TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer > grid_notifier(notifier);
                     CellLock<GridReadGuard> cell_lock(cell, p);
-                    cell_lock->Visit(cell_lock, world_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-                    cell_lock->Visit(cell_lock, grid_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                    cell_lock->Visit(cell_lock, world_notifier, *m_caster->GetMap());
+                    cell_lock->Visit(cell_lock, grid_notifier, *m_caster->GetMap());
                 }
             }
         }break;
@@ -1847,8 +1857,8 @@ void Spell::SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap)
                     TypeContainerVisitor<MaNGOS::SpellNotifierCreatureAndPlayer, GridTypeMapContainer > grid_notifier(notifier);
 
                     CellLock<GridReadGuard> cell_lock(cell, p);
-                    cell_lock->Visit(cell_lock, world_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
-                    cell_lock->Visit(cell_lock, grid_notifier, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                    cell_lock->Visit(cell_lock, world_notifier, *m_caster->GetMap());
+                    cell_lock->Visit(cell_lock, grid_notifier, *m_caster->GetMap());
                 }
             }
             else
@@ -2019,6 +2029,8 @@ void Spell::cancel()
 
 void Spell::cast(bool skipCheck)
 {
+    SetExecutedCurrently(true);
+
     uint8 castResult = 0;
 
     // update pointers base at GUIDs to prevent access to non-existed already object
@@ -2028,6 +2040,7 @@ void Spell::cast(bool skipCheck)
     if(!m_targets.getUnitTarget() && m_targets.getUnitTargetGUID() && m_targets.getUnitTargetGUID() != m_caster->GetGUID())
     {
         cancel();
+        SetExecutedCurrently(false);
         return;
     }
 
@@ -2039,6 +2052,7 @@ void Spell::cast(bool skipCheck)
     {
         SendCastResult(castResult);
         finish(false);
+        SetExecutedCurrently(false);
         return;
     }
 
@@ -2050,6 +2064,7 @@ void Spell::cast(bool skipCheck)
         {
             SendCastResult(castResult);
             finish(false);
+            SetExecutedCurrently(false);
             return;
         }
     }
@@ -2082,7 +2097,10 @@ void Spell::cast(bool skipCheck)
     FillTargetMap();
 
     if(m_spellState == SPELL_STATE_FINISHED)                // stop cast if spell marked as finish somewhere in Take*/FillTargetMap
+    {
+        SetExecutedCurrently(false);
         return;
+    }
 
     SendCastResult(castResult);
     SendSpellGo();                                          // we must send smsg_spell_go packet before m_castItem delete in TakeCastItem()...
@@ -2114,6 +2132,8 @@ void Spell::cast(bool skipCheck)
         // Immediate spell, no big deal
         handle_immediate();
     }
+
+    SetExecutedCurrently(false);
 }
 
 void Spell::handle_immediate()
@@ -2342,7 +2362,7 @@ void Spell::SendSpellCooldown()
                 if(*i_scset == m_spellInfo->Id)             // skip main spell, already handled above
                     continue;
 
-                _player->AddSpellCooldown(m_spellInfo->Id, m_CastItem ? m_CastItem->GetEntry() : 0, catrecTime);
+                _player->AddSpellCooldown(*i_scset, m_CastItem ? m_CastItem->GetEntry() : 0, catrecTime);
             }
         }
     }
@@ -2472,13 +2492,13 @@ void Spell::finish(bool ok)
 
     m_spellState = SPELL_STATE_FINISHED;
 
-    //remove spell mods
-    if (m_caster->GetTypeId() == TYPEID_PLAYER)
-        ((Player*)m_caster)->RemoveSpellMods(this);
-
     // other code related only to successfully finished spells
     if(!ok)
         return;
+
+    //remove spell mods
+    if (m_caster->GetTypeId() == TYPEID_PLAYER)
+        ((Player*)m_caster)->RemoveSpellMods(this);
 
     //handle SPELL_AURA_ADD_TARGET_TRIGGER auras
     Unit::AuraList const& targetTriggers = m_caster->GetAurasByType(SPELL_AURA_ADD_TARGET_TRIGGER);
@@ -2517,7 +2537,19 @@ void Spell::finish(bool ok)
 
     // Clear combo at finish state
     if(m_caster->GetTypeId() == TYPEID_PLAYER && NeedsComboPoints(m_spellInfo))
-        ((Player*)m_caster)->ClearComboPoints();
+    {
+        // Not drop combopoints if negative spell and if any miss on enemy exist
+        bool needDrop = true;
+        if (!IsPositiveSpell(m_spellInfo->Id))
+        for(std::list<TargetInfo>::iterator ihit= m_UniqueTargetInfo.begin();ihit != m_UniqueTargetInfo.end();++ihit)
+            if (ihit->missCondition != SPELL_MISS_NONE && ihit->targetGUID!=m_caster->GetGUID())
+            {
+                needDrop = false;
+                break;
+            }
+        if (needDrop)
+            ((Player*)m_caster)->ClearComboPoints();
+    }
 
     // call triggered spell only at successful cast (after clear combo points -> for add some if need)
     if(!m_TriggerSpells.empty())
@@ -2549,13 +2581,23 @@ void Spell::SendCastResult(uint8 result)
                 break;
             case SPELL_FAILED_REQUIRES_AREA:
                 // hardcode areas limitation case
-                if( m_spellInfo->Id==41618 || m_spellInfo->Id==41620 )
-                    data << uint32(3842);
-                else if( m_spellInfo->Id==41617 || m_spellInfo->Id==41619 )
-                    data << uint32(3905);
-                // normal case
-                else
-                    data << uint32(m_spellInfo->AreaId);
+                switch(m_spellInfo->Id)
+                {
+                    case 41617:                             // Cenarion Mana Salve
+                    case 41619:                             // Cenarion Healing Salve
+                        data << uint32(3905);
+                        break;
+                    case 41618:                             // Bottled Nethergon Energy
+                    case 41620:                             // Bottled Nethergon Vapor
+                        data << uint32(3842);
+                        break;
+                    case 45373:                             // Bloodberry Elixir
+                        data << uint32(4075);
+                        break;
+                    default:                                // default case
+                        data << uint32(m_spellInfo->AreaId);
+                        break;
+                }
                 break;
             case SPELL_FAILED_TOTEMS:
                 if(m_spellInfo->Totem[0])
@@ -2591,17 +2633,13 @@ void Spell::SendSpellStart()
     if(!IsNeedSendToClient())
         return;
 
-    sLog.outDebug("Sending SMSG_SPELL_START id=%u",m_spellInfo->Id);
+    sLog.outDebug("Sending SMSG_SPELL_START id=%u", m_spellInfo->Id);
 
-    uint16 castFlags = CAST_FLAG_UNKNOWN1;
+    uint32 castFlags = CAST_FLAG_UNKNOWN1;
     if(IsRangedSpell())
         castFlags |= CAST_FLAG_AMMO;
 
-    Unit * target;
-    if(!m_targets.getUnitTarget())
-        target = m_caster;
-    else
-        target = m_targets.getUnitTarget();
+    Unit *target = m_targets.getUnitTarget() ? m_targets.getUnitTarget() : m_caster;
 
     WorldPacket data(SMSG_SPELL_START, (8+8+4+4+2));
     if(m_CastItem)
@@ -2629,17 +2667,13 @@ void Spell::SendSpellGo()
     if(!IsNeedSendToClient())
         return;
 
-    sLog.outDebug("Sending SMSG_SPELL_GO id=%u",m_spellInfo->Id);
+    sLog.outDebug("Sending SMSG_SPELL_GO id=%u", m_spellInfo->Id);
 
-    Unit * target;
-    if(!m_targets.getUnitTarget())
-        target = m_caster;
-    else
-        target = m_targets.getUnitTarget();
+    Unit *target = m_targets.getUnitTarget() ? m_targets.getUnitTarget() : m_caster;
 
-    uint16 castFlags = CAST_FLAG_UNKNOWN3;
+    uint32 castFlags = CAST_FLAG_UNKNOWN3;
     if(IsRangedSpell())
-        castFlags |= CAST_FLAG_AMMO;
+        castFlags |= CAST_FLAG_AMMO;                        // arrows/bullets visual
 
     WorldPacket data(SMSG_SPELL_GO, 50);                    // guess size
     if(m_CastItem)
@@ -2740,7 +2774,7 @@ void Spell::SendLogExecute()
     data << uint32(count1);                                 // count1 (effect count?)
     for(uint32 i = 0; i < count1; ++i)
     {
-        data << uint32(m_spellInfo->Effect[0]);             // spell effect?
+        data << uint32(m_spellInfo->Effect[0]);             // spell effect
         uint32 count2 = 1;
         data << uint32(count2);                             // count2 (target count?)
         for(uint32 j = 0; j < count2; ++j)
@@ -2864,7 +2898,7 @@ void Spell::SendChannelUpdate(uint32 time)
 
     WorldPacket data( MSG_CHANNEL_UPDATE, 8+4 );
     data.append(m_caster->GetPackGUID());
-    data << time;
+    data << uint32(time);
 
     ((Player*)m_caster)->GetSession()->SendPacket( &data );
 }
@@ -2873,7 +2907,7 @@ void Spell::SendChannelStart(uint32 duration)
 {
     WorldObject* target = NULL;
 
-    // select first not rsusted target from target list for _0_ effect
+    // select first not resisted target from target list for _0_ effect
     if(!m_UniqueTargetInfo.empty())
     {
         for(std::list<TargetInfo>::iterator itr= m_UniqueTargetInfo.begin();itr != m_UniqueTargetInfo.end();++itr)
@@ -2901,8 +2935,8 @@ void Spell::SendChannelStart(uint32 duration)
     {
         WorldPacket data( MSG_CHANNEL_START, (8+4+4) );
         data.append(m_caster->GetPackGUID());
-        data << m_spellInfo->Id;
-        data << duration;
+        data << uint32(m_spellInfo->Id);
+        data << uint32(duration);
 
         ((Player*)m_caster)->GetSession()->SendPacket( &data );
     }
@@ -2928,8 +2962,8 @@ void Spell::SendPlaySpellVisual(uint32 SpellID)
         return;
 
     WorldPacket data(SMSG_PLAY_SPELL_VISUAL, 12);
-    data << m_caster->GetGUID();
-    data << SpellID;
+    data << uint64(m_caster->GetGUID());
+    data << uint32(SpellID);                                // spell visual id?
     ((Player*)m_caster)->GetSession()->SendPacket(&data);
 }
 
@@ -3131,7 +3165,7 @@ void Spell::TriggerSpell()
 {
     for(TriggerSpells::iterator si=m_TriggerSpells.begin(); si!=m_TriggerSpells.end(); ++si)
     {
-        Spell* spell = new Spell(m_caster, (*si), true, m_originalCasterGUID, this->m_selfContainer);
+        Spell* spell = new Spell(m_caster, (*si), true, m_originalCasterGUID, m_selfContainer);
         spell->prepare(&m_targets);                         // use original spell original targets
     }
 }
@@ -3199,7 +3233,7 @@ uint8 Spell::CanCast(bool strict)
             if (target->isInFlight())
                 return SPELL_FAILED_BAD_TARGETS;
 
-            if(VMAP::VMapFactory::checkSpellForLoS(m_spellInfo->Id) && !m_caster->IsWithinLOSInMap(target))
+            if(!m_IsTriggeredSpell && VMAP::VMapFactory::checkSpellForLoS(m_spellInfo->Id) && !m_caster->IsWithinLOSInMap(target))
                 return SPELL_FAILED_LINE_OF_SIGHT;
 
             // auto selection spell rank implemented in WorldSession::HandleCastSpellOpcode
@@ -3271,8 +3305,12 @@ uint8 Spell::CanCast(bool strict)
         //Must be behind the target.
         if( m_spellInfo->AttributesEx2 == 0x100000 && (m_spellInfo->AttributesEx & 0x200) == 0x200 && target->HasInArc(M_PI, m_caster) )
         {
-            SendInterrupted(2);
-            return SPELL_FAILED_NOT_BEHIND;
+            //Exclusion for Pounce: Facing Limitation was removed in 2.0.1, but it still uses the same, old Ex-Flags
+            if( m_spellInfo->SpellFamilyName != SPELLFAMILY_DRUID || m_spellInfo->SpellFamilyFlags != 0x0000000000020000LL )
+            {
+                SendInterrupted(2);
+                return SPELL_FAILED_NOT_BEHIND;
+            }
         }
 
         //Target must be facing you.
@@ -3303,8 +3341,9 @@ uint8 Spell::CanCast(bool strict)
                 return SPELL_FAILED_NOT_IN_ARENA;
 
     // zone check
-    if(!IsSpellAllowedInLocation(m_spellInfo,m_caster->GetMapId(),m_caster->GetZoneId(),m_caster->GetAreaId()))
-        return SPELL_FAILED_REQUIRES_AREA;
+    if (uint8 res= GetSpellAllowedInLocationError(m_spellInfo,m_caster->GetMapId(),m_caster->GetZoneId(),m_caster->GetAreaId(),
+        m_caster->GetTypeId()==TYPEID_PLAYER ? ((Player*)m_caster)->GetBattleGroundId() : 0))
+        return res;
 
     // not let players cast spells at mount (and let do it to creatures)
     if( m_caster->IsMounted() && m_caster->GetTypeId()==TYPEID_PLAYER && !m_IsTriggeredSpell &&
@@ -3331,8 +3370,6 @@ uint8 Spell::CanCast(bool strict)
                 m_spellInfo->EffectImplicitTargetA[j] == TARGET_SCRIPT_COORDINATES ||
                 m_spellInfo->EffectImplicitTargetB[j] == TARGET_SCRIPT_COORDINATES )
             {
-                bool okDoo = false;
-
                 SpellScriptTarget::const_iterator lower = spellmgr.GetBeginSpellScriptTarget(m_spellInfo->Id);
                 SpellScriptTarget::const_iterator upper = spellmgr.GetEndSpellScriptTarget(m_spellInfo->Id);
                 if(lower==upper)
@@ -3363,7 +3400,7 @@ uint8 Spell::CanCast(bool strict)
 
                                 TypeContainerVisitor<MaNGOS::GameObjectLastSearcher<MaNGOS::NearestGameObjectEntryInObjectRangeCheck>, GridTypeMapContainer > object_checker(checker);
                                 CellLock<GridReadGuard> cell_lock(cell, p);
-                                cell_lock->Visit(cell_lock, object_checker, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                                cell_lock->Visit(cell_lock, object_checker, *m_caster->GetMap());
 
                                 if(p_GameObject)
                                 {
@@ -3402,7 +3439,7 @@ uint8 Spell::CanCast(bool strict)
                             TypeContainerVisitor<MaNGOS::CreatureLastSearcher<MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck>, GridTypeMapContainer >  grid_creature_searcher(searcher);
 
                             CellLock<GridReadGuard> cell_lock(cell, p);
-                            cell_lock->Visit(cell_lock, grid_creature_searcher, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+                            cell_lock->Visit(cell_lock, grid_creature_searcher, *m_caster->GetMap());
 
                             if(p_Creature )
                             {
@@ -3580,7 +3617,11 @@ uint8 Spell::CanCast(bool strict)
             }
             case SPELL_EFFECT_FEED_PET:
             {
-                if (m_caster->GetTypeId() != TYPEID_PLAYER || !m_targets.getItemTarget() )
+                if (m_caster->GetTypeId() != TYPEID_PLAYER)
+                    return SPELL_FAILED_BAD_TARGETS;
+
+                Item* foodItem = m_targets.getItemTarget();
+                if(!foodItem)
                     return SPELL_FAILED_BAD_TARGETS;
 
                 Pet* pet = m_caster->GetPet();
@@ -3588,10 +3629,10 @@ uint8 Spell::CanCast(bool strict)
                 if(!pet)
                     return SPELL_FAILED_NO_PET;
 
-                if(!pet->HaveInDiet(m_targets.getItemTarget()->GetProto()))
+                if(!pet->HaveInDiet(foodItem->GetProto()))
                     return SPELL_FAILED_WRONG_PET_FOOD;
 
-                if(!pet->GetCurrentFoodBenefitLevel(m_targets.getItemTarget()->GetProto()->ItemLevel))
+                if(!pet->GetCurrentFoodBenefitLevel(foodItem->GetProto()->ItemLevel))
                     return SPELL_FAILED_FOOD_LOWLEVEL;
 
                 if(m_caster->isInCombat() || pet->isInCombat())
@@ -3932,7 +3973,9 @@ uint8 Spell::CanCast(bool strict)
 
                 if(int32(m_targets.getUnitTarget()->getLevel()) > CalculateDamage(i,m_targets.getUnitTarget()))
                     return SPELL_FAILED_HIGHLEVEL;
-            };break;
+
+                break;
+            }
             case SPELL_AURA_MOUNTED:
             {
                 if (m_caster->IsInWater())
@@ -3965,7 +4008,9 @@ uint8 Spell::CanCast(bool strict)
                 // can be casted at non-friendly unit or own pet/charm
                 if(m_caster->IsFriendlyTo(m_targets.getUnitTarget()))
                     return SPELL_FAILED_TARGET_FRIENDLY;
-            };break;
+
+                break;
+            }
             case SPELL_AURA_MOD_INCREASE_FLIGHT_SPEED:
             case SPELL_AURA_FLY:
             {
@@ -3976,7 +4021,9 @@ uint8 Spell::CanCast(bool strict)
                         GetVirtualMapForMapAndZone(m_caster->GetMapId(),m_caster->GetZoneId()) != 530)
                         return SPELL_FAILED_NOT_HERE;
                 }
-            };break;
+
+                break;
+            }
             case SPELL_AURA_PERIODIC_MANA_LEECH:
             {
                 if (!m_targets.getUnitTarget())
@@ -3987,9 +4034,11 @@ uint8 Spell::CanCast(bool strict)
 
                 if(m_targets.getUnitTarget()->getPowerType()!=POWER_MANA)
                     return SPELL_FAILED_BAD_TARGETS;
+
                 break;
             }
-            default:break;
+            default:
+                break;
         }
     }
 
@@ -4002,7 +4051,7 @@ int16 Spell::PetCanCast(Unit* target)
     if(!m_caster->isAlive())
         return SPELL_FAILED_CASTER_DEAD;
 
-    if(m_caster->IsNonMeleeSpellCasted(false))              //prevent spellcast interuption by another spellcast
+    if(m_caster->IsNonMeleeSpellCasted(false))              //prevent spellcast interruption by another spellcast
         return SPELL_FAILED_SPELL_IN_PROGRESS;
     if(m_caster->isInCombat() && IsNonCombatSpell(m_spellInfo))
         return SPELL_FAILED_AFFECTING_COMBAT;
@@ -4093,7 +4142,7 @@ uint8 Spell::CheckCasterAuras() const
             else if(m_spellInfo->EffectApplyAuraName[i] == SPELL_AURA_DISPEL_IMMUNITY)
                 dispel_immune |= GetDispellMask(DispelType(m_spellInfo->EffectMiscValue[i]));
         }
-        //immune movement impairement and loss of control
+        //immune movement impairment and loss of control
         if(m_spellInfo->Id==(uint32)42292)
             mechanic_immune = IMMUNE_TO_MOVEMENT_IMPAIRMENT_AND_LOSS_CONTROL_MASK;
     }
@@ -4112,14 +4161,14 @@ uint8 Spell::CheckCasterAuras() const
     else if(m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED) && m_spellInfo->PreventionType==SPELL_PREVENTION_TYPE_PACIFY)
         prevented_reason = SPELL_FAILED_PACIFIED;
 
-    // Attr must make flag drop spell totally immuned from all effects
+    // Attr must make flag drop spell totally immune from all effects
     if(prevented_reason)
     {
         if(school_immune || mechanic_immune || dispel_immune)
         {
             //Checking auras is needed now, because you are prevented by some state but the spell grants immunity.
             Unit::AuraMap const& auras = m_caster->GetAuras();
-            for(Unit::AuraMap::const_iterator itr = auras.begin(); itr != auras.end(); itr++)
+            for(Unit::AuraMap::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
             {
                 if(itr->second)
                 {
@@ -4373,6 +4422,8 @@ uint8 Spell::CheckItems()
             uint32 ItemClass = proto->Class;
             if (ItemClass == ITEM_CLASS_CONSUMABLE && m_targets.getUnitTarget())
             {
+                // such items should only fail if there is no suitable effect at all - see Rejuvenation Potions for example
+                uint8 failReason = 0;
                 for (int i = 0; i < 3; i++)
                 {
                     // skip check, pet not required like checks, and for TARGET_PET m_targets.getUnitTarget() is not the real target but the caster
@@ -4380,21 +4431,43 @@ uint8 Spell::CheckItems()
                         continue;
 
                     if (m_spellInfo->Effect[i] == SPELL_EFFECT_HEAL)
+                    {
                         if (m_targets.getUnitTarget()->GetHealth() == m_targets.getUnitTarget()->GetMaxHealth())
-                            return (uint8)SPELL_FAILED_ALREADY_AT_FULL_HEALTH;
+                        {
+                            failReason = (uint8)SPELL_FAILED_ALREADY_AT_FULL_HEALTH;
+                            continue;
+                        }
+                        else
+                        {
+                            failReason = 0;
+                            break;
+                        }
+                    }
 
                     // Mana Potion, Rage Potion, Thistle Tea(Rogue), ...
                     if (m_spellInfo->Effect[i] == SPELL_EFFECT_ENERGIZE)
                     {
                         if(m_spellInfo->EffectMiscValue[i] < 0 || m_spellInfo->EffectMiscValue[i] >= MAX_POWERS)
-                            return (uint8)SPELL_FAILED_ALREADY_AT_FULL_POWER;
+                        {
+                            failReason = (uint8)SPELL_FAILED_ALREADY_AT_FULL_POWER;
+                            continue;
+                        }
 
                         Powers power = Powers(m_spellInfo->EffectMiscValue[i]);
-
                         if (m_targets.getUnitTarget()->GetPower(power) == m_targets.getUnitTarget()->GetMaxPower(power))
-                            return (uint8)SPELL_FAILED_ALREADY_AT_FULL_POWER;
+                        {
+                            failReason = (uint8)SPELL_FAILED_ALREADY_AT_FULL_POWER;
+                            continue;
+                        }
+                        else
+                        {
+                            failReason = 0;
+                            break;
+                        }
                     }
                 }
+                if (failReason)
+                    return failReason;
             }
         }
     }
@@ -4429,7 +4502,7 @@ uint8 Spell::CheckItems()
 
         TypeContainerVisitor<MaNGOS::GameObjectSearcher<MaNGOS::GameObjectFocusCheck>, GridTypeMapContainer > object_checker(checker);
         CellLock<GridReadGuard> cell_lock(cell, p);
-        cell_lock->Visit(cell_lock, object_checker, *MapManager::Instance().GetMap(m_caster->GetMapId(), m_caster));
+        cell_lock->Visit(cell_lock, object_checker, *m_caster->GetMap());
 
         if(!ok)
             return (uint8)SPELL_FAILED_REQUIRES_SPELL_FOCUS;
@@ -4576,7 +4649,7 @@ uint8 Spell::CheckItems()
                     return SPELL_FAILED_CANT_BE_DISENCHANTED;
 
                 uint32 item_quality = itemProto->Quality;
-                // 2.0.x addon: Check player enchanting level agains the item desenchanting requirements
+                // 2.0.x addon: Check player enchanting level against the item disenchanting requirements
                 uint32 item_disenchantskilllevel = itemProto->RequiredDisenchantSkill;
                 if (item_disenchantskilllevel == uint32(-1))
                     return SPELL_FAILED_CANT_BE_DISENCHANTED;
@@ -4829,7 +4902,7 @@ CurrentSpellTypes Spell::GetCurrentContainer()
         return(CURRENT_GENERIC_SPELL);
 }
 
-bool Spell::CheckTarget( Unit* target, uint32 eff, bool hitPhase )
+bool Spell::CheckTarget( Unit* target, uint32 eff )
 {
     // Check targets for creature type mask and remove not appropriate (skip explicit self target case, maybe need other explicit targets)
     if(m_spellInfo->EffectImplicitTargetA[eff]!=TARGET_SELF )
@@ -5062,4 +5135,9 @@ void SpellEvent::Abort(uint64 /*e_time*/)
     // oops, the spell we try to do is aborted
     if (m_Spell->getState() != SPELL_STATE_FINISHED)
         m_Spell->cancel();
+}
+
+bool SpellEvent::IsDeletable() const
+{
+    return m_Spell->IsDeletable();
 }

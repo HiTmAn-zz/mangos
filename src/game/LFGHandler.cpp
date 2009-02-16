@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -110,7 +110,7 @@ static void AttemptAddMore(Player* _player)
             if(!group->Create(_player->GetGUID(), _player->GetName()))
             {
                 delete group;
-                return;                                     // cann't create group (??)
+                return;                                     // can't create group (??)
             }
 
             objmgr.AddGroup(group);
@@ -252,7 +252,7 @@ void WorldSession::SendLfgResult(uint32 type, uint32 entry, uint8 lfg_type)
 {
     uint32 number = 0;
 
-    // start preper packet;
+    // start prepare packet;
     WorldPacket data(MSG_LOOKING_FOR_GROUP);
     data << uint32(type);                                   // type
     data << uint32(entry);                                  // entry from LFGDungeons.dbc

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,13 +21,14 @@
 
 #include <vector>
 #include <string>
-#include "Utilities/HashMap.h"
+#include "Utilities/UnorderedMap.h"
 
+#define MAX_WAYPOINT_TEXT 5
 struct WaypointBehavior
 {
     uint32 emote;
     uint32 spell;
-    std::string text[5];
+    int32  textid[MAX_WAYPOINT_TEXT];
     uint32 model1;
     uint32 model2;
 
@@ -44,7 +45,7 @@ struct WaypointNode
     float orientation;
     uint32 delay;
     WaypointBehavior * behavior;
-    WaypointNode() {}
+    WaypointNode() : x(0.0f), y(0.0f), z(0.0f), orientation(0.0f), delay(0), behavior(NULL) {}
     WaypointNode(float _x, float _y, float _z, float _o, uint32 _delay, WaypointBehavior * _behavior)
       : x(_x), y(_y), z(_z), orientation(_o), delay(_delay), behavior(_behavior) {}
 };
@@ -75,12 +76,13 @@ class WaypointManager
         void DeletePath(uint32 id);
         void SetNodePosition(uint32 id, uint32 point, float x, float y, float z);
         void SetNodeText(uint32 id, uint32 point, const char *text_field, const char *text);
+        void CheckTextsExistance(std::set<int32>& ids);
 
     private:
         void _addNode(uint32 id, uint32 point, float x, float y, float z, float o, uint32 delay, uint32 wpGuid);
         void _clearPath(WaypointPath &path);
 
-        typedef HM_NAMESPACE::hash_map<uint32, WaypointPath> WaypointPathMap;
+        typedef UNORDERED_MAP<uint32, WaypointPath> WaypointPathMap;
         WaypointPathMap m_pathMap;
 };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -197,7 +197,7 @@ struct GuildBankEvent
     uint8  DestTabId;
     uint64 TimeStamp;
 
-    const bool isMoneyEvent()
+    bool isMoneyEvent() const
     {
         return LogEntry == GUILD_BANK_LOG_DEPOSIT_MONEY ||
             LogEntry == GUILD_BANK_LOG_WITHDRAW_MONEY ||
@@ -242,7 +242,7 @@ struct MemberSlot
 
 struct RankInfo
 {
-    RankInfo(std::string _name, uint32 _rights, uint32 _money) : name(_name), rights(_rights), BankMoneyPerDay(_money)
+    RankInfo(const std::string& _name, uint32 _rights, uint32 _money) : name(_name), rights(_rights), BankMoneyPerDay(_money)
     {
         for(uint8 i = 0; i < GUILD_BANK_MAX_TABS; ++i)
         {
@@ -307,8 +307,8 @@ class Guild
         bool FillPlayerData(uint64 guid, MemberSlot* memslot);
         void LoadPlayerStatsByGuid(uint64 guid);
 
-        void BroadcastToGuild(WorldSession *session, std::string msg, uint32 language = LANG_UNIVERSAL);
-        void BroadcastToOfficers(WorldSession *session, std::string msg, uint32 language = LANG_UNIVERSAL);
+        void BroadcastToGuild(WorldSession *session, const std::string& msg, uint32 language = LANG_UNIVERSAL);
+        void BroadcastToOfficers(WorldSession *session, const std::string& msg, uint32 language = LANG_UNIVERSAL);
         void BroadcastPacketToRank(WorldPacket *packet, uint32 rankId);
         void BroadcastPacket(WorldPacket *packet);
 
@@ -323,6 +323,23 @@ class Guild
         bool HasRankRight(uint32 rankId, uint32 right)
         {
             return ((GetRankRights(rankId) & right) != GR_RIGHT_EMPTY) ? true : false;
+        }
+        int32 GetRank(uint32 LowGuid);
+        bool IsMember(uint32 LowGuid)
+        {
+            return (members.find(LowGuid) != members.end());
+        }
+        MemberSlot* GetMemberSlot(const std::string& name, uint64& guid)
+        {
+            for(MemberList::iterator itr = members.begin(); itr != members.end(); ++itr)
+            {
+                if(itr->second.name == name)
+                {
+                    guid = itr->first;
+                    return &itr->second;
+                }
+            }
+            return NULL;
         }
 
         void Roster(WorldSession *session);
@@ -356,7 +373,7 @@ class Guild
         void   SetGuildBankTabInfo(uint8 TabId, std::string name, std::string icon);
         void   CreateBankRightForTab(uint32 rankid, uint8 TabId);
         const  GuildBankTab *GetBankTab(uint8 index) { if(index >= m_TabListMap.size()) return NULL; return m_TabListMap[index]; }
-        const  uint8 GetPurchasedTabs() const { return purchased_tabs; }
+        uint8 GetPurchasedTabs() const { return purchased_tabs; }
         uint32 GetBankRights(uint32 rankId, uint8 TabId) const;
         bool   IsMemberHaveRights(uint32 LowGuid, uint8 TabId,uint32 rights) const;
         bool   CanMemberViewTab(uint32 LowGuid, uint8 TabId) const;
@@ -388,7 +405,7 @@ class Guild
         bool   AddGBankItemToDB(uint32 GuildId, uint32 BankTab , uint32 BankTabSlot , uint32 GUIDLow, uint32 Entry );
 
     protected:
-        void AddRank(std::string name,uint32 rights,uint32 money);
+        void AddRank(const std::string& name,uint32 rights,uint32 money);
 
         uint32 Id;
         std::string name;

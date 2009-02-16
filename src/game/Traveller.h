@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,17 +37,17 @@ struct MANGOS_DLL_DECL Traveller
     Traveller(const Traveller &obj) : i_traveller(obj) {}
     Traveller& operator=(const Traveller &obj)
     {
-        this->~Traveller();
+        ~Traveller();
         new (this) Traveller(obj);
         return *this;
     }
 
     operator T&(void) { return i_traveller; }
     operator const T&(void) { return i_traveller; }
-    inline float GetPositionX() const { return i_traveller.GetPositionX(); }
-    inline float GetPositionY() const { return i_traveller.GetPositionY(); }
-    inline float GetPositionZ() const { return i_traveller.GetPositionZ(); }
-    inline T& GetTraveller(void) { return i_traveller; }
+    float GetPositionX() const { return i_traveller.GetPositionX(); }
+    float GetPositionY() const { return i_traveller.GetPositionY(); }
+    float GetPositionZ() const { return i_traveller.GetPositionZ(); }
+    T& GetTraveller(void) { return i_traveller; }
 
     float Speed(void) { assert(false); return 0.0f; }
     void Relocation(float x, float y, float z, float orientation) {}
@@ -59,13 +59,18 @@ struct MANGOS_DLL_DECL Traveller
 template<>
 inline float Traveller<Creature>::Speed()
 {
-    return i_traveller.GetSpeed( i_traveller.HasUnitMovementFlag(MOVEMENTFLAG_WALK_MODE) ? MOVE_WALK : MOVE_RUN);
+    if(i_traveller.HasUnitMovementFlag(MOVEMENTFLAG_WALK_MODE))
+        return i_traveller.GetSpeed(MOVE_WALK);
+    else if(i_traveller.HasUnitMovementFlag(MOVEMENTFLAG_FLYING2))
+        return i_traveller.GetSpeed(MOVE_FLIGHT);
+    else
+        return i_traveller.GetSpeed(MOVE_RUN);
 }
 
 template<>
 inline void Traveller<Creature>::Relocation(float x, float y, float z, float orientation)
 {
-    MapManager::Instance().GetMap(i_traveller.GetMapId(), &i_traveller)->CreatureRelocation(&i_traveller, x, y, z, orientation);
+    i_traveller.GetMap()->CreatureRelocation(&i_traveller, x, y, z, orientation);
 }
 
 template<>
@@ -87,7 +92,7 @@ inline float Traveller<Player>::Speed()
 template<>
 inline void Traveller<Player>::Relocation(float x, float y, float z, float orientation)
 {
-    MapManager::Instance().GetMap(i_traveller.GetMapId(), &i_traveller)->PlayerRelocation(&i_traveller, x, y, z, orientation);
+    i_traveller.GetMap()->PlayerRelocation(&i_traveller, x, y, z, orientation);
 }
 
 template<>

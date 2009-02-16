@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,8 @@
 #include "LootMgr.h"
 #include "Database/DatabaseEnv.h"
 #include "Cell.h"
+
+#include <list>
 
 struct SpellEntry;
 
@@ -167,7 +169,7 @@ struct CreatureInfo
     uint32  rangeattacktime;
     uint32  unit_flags;                                     // enum UnitFlags mask values
     uint32  dynamicflags;
-    uint32  family;                                         // enum CreatureFamily values for type==CREATURE_TYPE_BEAST, or 0 in another cases
+    uint32  family;                                         // enum CreatureFamily values (optional)
     uint32  trainer_type;
     uint32  trainer_spell;
     uint32  classNum;
@@ -201,7 +203,7 @@ struct CreatureInfo
     uint32  equipmentId;
     uint32  MechanicImmuneMask;
     uint32  flags_extra;
-    char const* ScriptName;
+    uint32  ScriptID;
 
     // helpers
     SkillType GetRequiredLootSkill() const
@@ -216,7 +218,7 @@ struct CreatureInfo
 
     bool isTameable() const
     {
-        return type == CREATURE_TYPE_BEAST && family != 0 && (type_flags & CREATURE_TYPEFLAGS_TAMEBLE);
+        return type == CREATURE_TYPE_BEAST && family != 0 && (type_flags & CREATURE_TYPEFLAGS_TAMEABLE);
     }
 };
 
@@ -340,6 +342,7 @@ struct VendorItemData
     {
         for (VendorItemList::iterator itr = m_items.begin(); itr != m_items.end(); ++itr)
             delete (*itr);
+        m_items.clear();
     }
 };
 
@@ -357,25 +360,30 @@ typedef std::list<VendorItemCount> VendorItemCounts;
 
 struct TrainerSpell
 {
+    TrainerSpell() : spell(0), spellCost(0), reqSkill(0), reqSkillValue(0), reqLevel(0) {}
+
+    TrainerSpell(uint32 _spell, uint32 _spellCost, uint32 _reqSkill, uint32 _reqSkillValue, uint32 _reqLevel)
+        : spell(_spell), spellCost(_spellCost), reqSkill(_reqSkill), reqSkillValue(_reqSkillValue), reqLevel(_reqLevel)
+    {}
+
     uint32 spell;
-    uint32 spellcost;
-    uint32 reqskill;
-    uint32 reqskillvalue;
-    uint32 reqlevel;
+    uint32 spellCost;
+    uint32 reqSkill;
+    uint32 reqSkillValue;
+    uint32 reqLevel;
 };
 
-typedef std::vector<TrainerSpell*> TrainerSpellList;
+typedef UNORDERED_MAP<uint32 /*spellid*/, TrainerSpell> TrainerSpellMap;
 
 struct TrainerSpellData
 {
     TrainerSpellData() : trainerType(0) {}
 
-    TrainerSpellList spellList;
+    TrainerSpellMap spellList;
     uint32 trainerType;                                     // trainer type based at trainer spells, can be different from creature_template value.
                                                             // req. for correct show non-prof. trainers like weaponmaster, allowed values 0 and 2.
-
-    void Clear();
     TrainerSpell const* Find(uint32 spell_id) const;
+    void Clear() { spellList.clear(); }
 };
 
 typedef std::list<GossipOption> GossipOptionList;
@@ -421,7 +429,7 @@ class MANGOS_DLL_SPEC Creature : public Unit
         bool canFly()  const { return GetCreatureInfo()->InhabitType & INHABIT_AIR; }
         ///// TODO RENAME THIS!!!!!
         bool isCanTrainingOf(Player* player, bool msg) const;
-        bool isCanIneractWithBattleMaster(Player* player, bool msg) const;
+        bool isCanInteractWithBattleMaster(Player* player, bool msg) const;
         bool isCanTrainingAndResetTalentsOf(Player* pPlayer) const;
         bool IsOutOfThreatArea(Unit* pVictim) const;
         bool IsImmunedToSpell(SpellEntry const* spellInfo, bool useCharges = false);
@@ -490,7 +498,9 @@ class MANGOS_DLL_SPEC Creature : public Unit
 
         CreatureInfo const *GetCreatureInfo() const { return m_creatureInfo; }
         CreatureDataAddon const* GetCreatureAddon() const;
-        char const* GetScriptName() const;
+
+        std::string GetScriptName();
+        uint32 GetScriptId();
 
         void prepareGossipMenu( Player *pPlayer, uint32 gossipid = 0 );
         void sendPreparedGossip( Player* player );
@@ -513,7 +523,11 @@ class MANGOS_DLL_SPEC Creature : public Unit
         void TextEmote(int32 textId, uint64 TargetGuid, bool IsBossEmote = false) { MonsterTextEmote(textId,TargetGuid,IsBossEmote); }
         void Whisper(int32 textId, uint64 receiver, bool IsBossWhisper = false) { MonsterWhisper(textId,receiver,IsBossWhisper); }
 
+        // overwrite WorldObject function for proper name localization
+        const char* GetNameForLocaleIdx(int32 locale_idx) const;
+
         void setDeathState(DeathState s);                   // overwrite virtual Unit::setDeathState
+        bool FallGround();
 
         bool LoadFromDB(uint32 guid, Map *map);
         void SaveToDB();
@@ -540,8 +554,9 @@ class MANGOS_DLL_SPEC Creature : public Unit
 
         float GetAttackDistance(Unit const* pl) const;
 
-        void CallAssistence();
-        void SetNoCallAssistence(bool val) { m_AlreadyCallAssistence = val; }
+        void CallAssistance();
+        void SetNoCallAssistance(bool val) { m_AlreadyCallAssistance = val; }
+        bool CanAssistTo(const Unit* u, const Unit* enemy) const;
 
         MovementGeneratorType GetDefaultMovementType() const { return m_defaultMovementType; }
         void SetDefaultMovementType(MovementGeneratorType mgt) { m_defaultMovementType = mgt; }
@@ -626,7 +641,7 @@ class MANGOS_DLL_SPEC Creature : public Unit
         uint32 m_DBTableGuid;                               ///< For new or temporary creatures is 0 for saved it is lowguid
         uint32 m_equipmentId;
 
-        bool m_AlreadyCallAssistence;
+        bool m_AlreadyCallAssistance;
         bool m_regenHealth;
         bool m_AI_locked;
         bool m_isDeadByDefault;
@@ -641,4 +656,20 @@ class MANGOS_DLL_SPEC Creature : public Unit
         GridReference<Creature> m_gridRef;
         CreatureInfo const* m_creatureInfo;                 // in heroic mode can different from ObjMgr::GetCreatureTemplate(GetEntry())
 };
+
+class AssistDelayEvent : public BasicEvent
+{
+    public:
+        AssistDelayEvent(const uint64& victim, Unit& owner) : BasicEvent(), m_victim(victim), m_owner(owner) { }
+
+        bool Execute(uint64 e_time, uint32 p_time);
+        void AddAssistant(const uint64& guid) { m_assistants.push_back(guid); }
+    private:
+        AssistDelayEvent();
+
+        uint64            m_victim;
+        std::list<uint64> m_assistants;
+        Unit&             m_owner;
+};
+
 #endif

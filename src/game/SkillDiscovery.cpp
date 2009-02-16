@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ struct SkillDiscoveryEntry
 };
 
 typedef std::list<SkillDiscoveryEntry> SkillDiscoveryList;
-typedef HM_NAMESPACE::hash_map<int32, SkillDiscoveryList> SkillDiscoveryMap;
+typedef UNORDERED_MAP<int32, SkillDiscoveryList> SkillDiscoveryMap;
 
 static SkillDiscoveryMap SkillDiscoveryStore;
 
@@ -52,7 +52,7 @@ void LoadSkillDiscoveryTable()
     uint32 count = 0;
 
     //                                                 0        1         2
-    QueryResult *result = WorldDatabase.PQuery("SELECT spellId, reqSpell, chance FROM skill_discovery_template");
+    QueryResult *result = WorldDatabase.Query("SELECT spellId, reqSpell, chance FROM skill_discovery_template");
 
     if (result)
     {

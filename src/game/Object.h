@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,9 +30,8 @@
 #include <string>
 
 #define CONTACT_DISTANCE            0.5f
-#define INTERACTION_DISTANCE        5
-#define ATTACK_DISTANCE             5
-#define DETECT_DISTANCE             20                      // max distance to successful detect stealthed unit
+#define INTERACTION_DISTANCE        5.0f
+#define ATTACK_DISTANCE             5.0f
 #define MAX_VISIBILITY_DISTANCE  (5*SIZE_OF_GRID_CELL/2.0f) // max distance for visible object show, limited by active zone for player based at cell size (active zone = 5x5 cells)
 #define DEFAULT_VISIBILITY_DISTANCE (SIZE_OF_GRID_CELL)     // default visible distance
 
@@ -65,6 +64,7 @@ enum TypeID
     TYPEID_AIGROUP       = 8,
     TYPEID_AREATRIGGER   = 9
 };
+#define MAX_TYPEID         10
 
 uint32 GuidHigh2TypeId(uint32 guid_hi);
 
@@ -90,7 +90,7 @@ class Map;
 class UpdateMask;
 class InstanceData;
 
-typedef HM_NAMESPACE::hash_map<Player*, UpdateData> UpdateDataMapType;
+typedef UNORDERED_MAP<Player*, UpdateData> UpdateDataMapType;
 
 struct WorldLocation
 {
@@ -99,8 +99,8 @@ struct WorldLocation
     float y;
     float z;
     float o;
-    explicit WorldLocation(uint32 mapid = 0, float x = 0, float y = 0, float z = 0, float o = 0)
-        : mapid(mapid), x(x), y(y), z(z), o(o) {}
+    explicit WorldLocation(uint32 _mapid = 0, float _x = 0, float _y = 0, float _z = 0, float _o = 0)
+        : mapid(_mapid), x(_x), y(_y), z(_z), o(_o) {}
     WorldLocation(WorldLocation const &loc)
         : mapid(loc.mapid), x(loc.x), y(loc.y), z(loc.z), o(loc.o) {}
 };
@@ -227,6 +227,24 @@ class MANGOS_DLL_SPEC Object
             return (m_uint32Values[ index ] & flag) != 0;
         }
 
+        void SetByteFlag( uint16 index, uint8 offset, uint8 newFlag );
+        void RemoveByteFlag( uint16 index, uint8 offset, uint8 newFlag );
+
+        void ToggleFlag( uint16 index, uint8 offset, uint8 flag )
+        {
+            if(HasByteFlag(index, offset, flag))
+                RemoveByteFlag(index, offset, flag);
+            else
+                SetByteFlag(index, offset, flag);
+        }
+
+        bool HasByteFlag( uint16 index, uint8 offset, uint8 flag ) const
+        {
+            ASSERT( index < m_valuesCount || PrintIndexError( index , false ) );
+            ASSERT( offset < 4 );
+            return (((uint8*)&m_uint32Values[index])[offset] & flag) != 0;
+        }
+
         void ApplyModFlag( uint16 index, uint32 flag, bool apply)
         {
             if(apply) SetFlag(index,flag); else RemoveFlag(index,flag);
@@ -298,7 +316,7 @@ class MANGOS_DLL_SPEC Object
         {
             int32  *m_int32Values;
             uint32 *m_uint32Values;
-            float *m_floatValues;
+            float  *m_floatValues;
         };
 
         uint32 *m_uint32Values_mirror;
@@ -390,15 +408,21 @@ class MANGOS_DLL_SPEC WorldObject : public Object
         InstanceData* GetInstanceData();
 
         const char* GetName() const { return m_name.c_str(); }
-        void SetName(std::string newname) { m_name=newname; }
+        void SetName(const std::string& newname) { m_name=newname; }
+
+        virtual const char* GetNameForLocaleIdx(int32 /*locale_idx*/) const { return GetName(); }
 
         float GetDistance( const WorldObject* obj ) const;
         float GetDistance(const float x, const float y, const float z) const;
         float GetDistance2d(const WorldObject* obj) const;
         float GetDistance2d(const float x, const float y) const;
         float GetDistanceZ(const WorldObject* obj) const;
-        bool IsInMap(const WorldObject* obj) const { return GetMapId()==obj->GetMapId() && GetInstanceId()==obj->GetInstanceId(); }
-        bool IsWithinDistInMap(const WorldObject* obj, const float dist2compare) const;
+        bool IsInMap(const WorldObject* obj) const
+        {
+            return IsInWorld() && obj->IsInWorld() && GetMapId()==obj->GetMapId() &&
+                GetInstanceId()==obj->GetInstanceId();
+        }
+        bool IsWithinDistInMap(const WorldObject* obj, const float dist2compare, const bool is3D = true) const;
         bool IsWithinLOS(const float x, const float y, const float z ) const;
         bool IsWithinLOSInMap(const WorldObject* obj) const;
 
@@ -447,7 +471,8 @@ class MANGOS_DLL_SPEC WorldObject : public Object
         std::string m_name;
 
     private:
-        uint32 m_mapId;
+        uint32 m_mapId;                                     // object at map with map_id
+        uint32 m_InstanceId;                                // in map copy with instance id
 
         float m_positionX;
         float m_positionY;
@@ -455,7 +480,5 @@ class MANGOS_DLL_SPEC WorldObject : public Object
         float m_orientation;
 
         bool mSemaphoreTeleport;
-
-        uint32 m_InstanceId;
 };
 #endif

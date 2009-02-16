@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -80,19 +80,10 @@ bool ChatHandler::HandleAccountDeleteCommand(const char* args)
     }
 
     /// Commands not recommended call from chat, but support anyway
-    if(m_session)
-    {
-        uint32 targetSecurity = accmgr.GetSecurity(account_id);
-
-        /// can delete only for account with less security
-        /// This is also reject self apply in fact
-        if (targetSecurity >= m_session->GetSecurity())
-        {
-            SendSysMessage (LANG_YOURS_SECURITY_IS_LOW);
-            SetSentErrorMessage (true);
-            return false;
-        }
-    }
+    /// can delete only for account with less security
+    /// This is also reject self apply in fact
+    if(HasLowerSecurityAccount (NULL,account_id,true))
+        return false;
 
     AccountOpResult result = accmgr.DeleteAccount(account_id);
     switch(result)
@@ -165,7 +156,7 @@ bool ChatHandler::HandleCharacterDeleteCommand(const char* args)
 bool ChatHandler::HandleServerExitCommand(const char* args)
 {
     SendSysMessage(LANG_COMMAND_EXIT);
-    World::m_stopEvent = true;
+    World::StopNow(SHUTDOWN_EXIT_CODE);
     return true;
 }
 
@@ -306,14 +297,14 @@ void CliRunnable::run()
     printf("mangos>");
 
     ///- As long as the World is running (no World::m_stopEvent), get the command line and handle it
-    while (!World::m_stopEvent)
+    while (!World::IsStopped())
     {
         fflush(stdout);
         #ifdef linux
-        while (!kb_hit_return() && !World::m_stopEvent)
+        while (!kb_hit_return() && !World::IsStopped())
             // With this, we limit CLI to 10commands/second
             usleep(100);
-        if (World::m_stopEvent)
+        if (World::IsStopped())
             break;
         #endif
         char *command_str = fgets(commandbuf,sizeof(commandbuf),stdin);
@@ -344,7 +335,7 @@ void CliRunnable::run()
         }
         else if (feof(stdin))
         {
-            World::m_stopEvent = true;
+            World::StopNow(SHUTDOWN_EXIT_CODE);
         }
     }
 

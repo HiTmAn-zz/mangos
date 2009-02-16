@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -355,7 +355,7 @@ struct GameObjectInfo
             uint32 data[24];
         } raw;
     };
-    char   *ScriptName;
+    uint32 ScriptId;
 };
 
 struct GameObjectLocale
@@ -442,6 +442,9 @@ class MANGOS_DLL_SPEC GameObject : public WorldObject
         void TextEmote(int32 textId, uint64 TargetGuid) { MonsterTextEmote(textId,TargetGuid); }
         void Whisper(int32 textId, uint64 receiver) { MonsterWhisper(textId,receiver); }
 
+        // overwrite WorldObject function for proper name localization
+        const char* GetNameForLocaleIdx(int32 locale_idx) const;
+
         void SaveToDB();
         void SaveToDB(uint32 mapid, uint8 spawnMask);
         bool LoadFromDB(uint32 guid, Map *map);
@@ -496,7 +499,7 @@ class MANGOS_DLL_SPEC GameObject : public WorldObject
         void Delete();
         void SetSpellId(uint32 id) { m_spellId = id;}
         uint32 GetSpellId() const { return m_spellId;}
-        void getFishLoot(Loot *loot);
+        void getFishLoot(Loot *loot, Player* loot_owner);
         GameobjectTypes GetGoType() const { return GameobjectTypes(GetUInt32Value(GAMEOBJECT_TYPE_ID)); }
         void SetGoType(GameobjectTypes type) { SetUInt32Value(GAMEOBJECT_TYPE_ID, type); }
         uint32 GetGoState() const { return GetUInt32Value(GAMEOBJECT_STATE); }

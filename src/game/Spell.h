@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -329,7 +329,7 @@ class Spell
         bool HaveTargetsForEffect(uint8 effect) const;
         void Delayed();
         void DelayedChannel();
-        inline uint32 getState() const { return m_spellState; }
+        uint32 getState() const { return m_spellState; }
         void setState(uint32 state) { m_spellState = state; }
 
         void DoCreateItem(uint32 i, uint32 itemtype);
@@ -341,7 +341,7 @@ class Spell
         void SetTargetMap(uint32 i,uint32 cur,std::list<Unit*> &TagUnitMap);
 
         Unit* SelectMagnetTarget();
-        bool CheckTarget( Unit* target, uint32 eff, bool hitPhase );
+        bool CheckTarget( Unit* target, uint32 eff );
 
         void SendCastResult(uint8 result);
         void SendSpellStart();
@@ -380,8 +380,9 @@ class Spell
         bool IsMeleeAttackResetSpell() const { return !m_IsTriggeredSpell && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_AUTOATTACK);  }
         bool IsRangedAttackResetSpell() const { return !m_IsTriggeredSpell && IsRangedSpell() && (m_spellInfo->InterruptFlags & SPELL_INTERRUPT_FLAG_AUTOATTACK); }
 
-        bool IsDeletable() const { return m_deletable; }
-        void SetDeletable(bool deletable) { m_deletable = deletable; }
+        bool IsDeletable() const { return !m_referencedFromCurrentSpell && !m_executedCurrently; }
+        void SetReferencedFromCurrent(bool yes) { m_referencedFromCurrentSpell = yes; }
+        void SetExecutedCurrently(bool yes) { m_executedCurrently = yes; }
         uint64 GetDelayStart() const { return m_delayStart; }
         void SetDelayStart(uint64 m_time) { m_delayStart = m_time; }
         uint64 GetDelayMoment() const { return m_delayMoment; }
@@ -433,7 +434,8 @@ class Spell
         bool m_immediateHandled;                            // were immediate actions handled? (used by delayed spells only)
 
         // These vars are used in both delayed spell system and modified immediate spell system
-        bool m_deletable;                                   // is the spell pending deletion or must be updated till permitted to delete?
+        bool m_referencedFromCurrentSpell;                  // mark as references to prevent deleted and access by dead pointers
+        bool m_executedCurrently;                           // mark as executed to prevent deleted and access by dead pointers
         bool m_needSpellLog;                                // need to send spell log?
         uint8 m_applyMultiplierMask;                        // by effect: damage multiplier needed?
         float m_damageMultipliers[3];                       // by effect: damage multiplier
@@ -695,6 +697,7 @@ class SpellEvent : public BasicEvent
 
         virtual bool Execute(uint64 e_time, uint32 p_time);
         virtual void Abort(uint64 e_time);
+        virtual bool IsDeletable() const;
     protected:
         Spell* m_Spell;
 };

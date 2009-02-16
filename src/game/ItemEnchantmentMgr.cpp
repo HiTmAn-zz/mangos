@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ struct EnchStoreItem
 };
 
 typedef std::vector<EnchStoreItem> EnchStoreList;
-typedef HM_NAMESPACE::hash_map<uint32, EnchStoreList> EnchantmentStore;
+typedef UNORDERED_MAP<uint32, EnchStoreList> EnchantmentStore;
 
 static EnchantmentStore RandomItemEnch;
 

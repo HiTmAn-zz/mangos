@@ -145,7 +145,7 @@
 				RelativePath="..\..\src\game\ArenaTeamHandler.cpp">
 			</File>
 			<File
-				RelativePath="..\..\src\game\AuctionHouse.cpp">
+				RelativePath="..\..\src\game\AuctionHouseHandler.cpp">
 			</File>
 			<File
 				RelativePath="..\..\src\game\BattleGround.cpp">
@@ -251,6 +251,9 @@
 			</File>
 			<File
 				RelativePath="..\..\src\game\GameEvent.h">
+			</File>
+			<File
+				RelativePath="..\..\src\game\GMTicketHandler.cpp">
 			</File>
 			<File
 				RelativePath="..\..\src\game\GossipDef.cpp">
@@ -472,7 +475,10 @@
 				RelativePath="..\..\src\game\ArenaTeam.h">
 			</File>
 			<File
-				RelativePath="..\..\src\game\AuctionHouseObject.h">
+				RelativePath="..\..\src\game\AuctionHouseMgr.cpp">
+			</File>
+			<File
+				RelativePath="..\..\src\game\AuctionHouseMgr.h">
 			</File>
 			<File
 				RelativePath="..\..\src\game\Bag.cpp">
@@ -550,6 +556,12 @@
 				RelativePath="..\..\src\game\GameObject.h">
 			</File>
 			<File
+				RelativePath="..\..\src\game\GMTicketMgr.cpp">
+			</File>
+			<File
+				RelativePath="..\..\src\game\GMTicketMgr.h">
+			</File>
+			<File
 				RelativePath="..\..\src\game\GuardAI.cpp">
 			</File>
 			<File
@@ -560,9 +572,6 @@
 			</File>
 			<File
 				RelativePath="..\..\src\game\Guild.h">
-			</File>
-			<File
-				RelativePath="..\..\src\game\HateMatrix.h">
 			</File>
 			<File
 				RelativePath="..\..\src\game\HomeMovementGenerator.cpp">
@@ -813,12 +822,6 @@
 			<File
 				RelativePath="..\..\src\game\PlayerDump.h">
 			</File>
-			<File
-				RelativePath="..\..\src\game\tools.cpp">
-			</File>
-			<File
-				RelativePath="..\..\src\game\Tools.h">
-			</File>
 		</Filter>
 		<Filter
 			Name="References"
@@ -846,6 +849,12 @@
 			</File>
 			<File
 				RelativePath="..\..\src\game\HostilRefManager.h">
+			</File>
+			<File
+				RelativePath="..\..\src\game\MapReference.h">
+			</File>
+			<File
+				RelativePath="..\..\src\game\MapRefManager.h">
 			</File>
 			<File
 				RelativePath="..\..\src\game\ThreatManager.cpp">

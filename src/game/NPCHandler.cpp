@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005-2008 MaNGOS <http://getmangos.com/>
+ * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -114,7 +114,7 @@ void WorldSession::SendTrainerList( uint64 guid )
     SendTrainerList( guid, str );
 }
 
-void WorldSession::SendTrainerList( uint64 guid,std::string strTitle )
+void WorldSession::SendTrainerList( uint64 guid, const std::string& strTitle )
 {
     sLog.outDebug( "WORLD: SendTrainerList" );
 
@@ -160,9 +160,9 @@ void WorldSession::SendTrainerList( uint64 guid,std::string strTitle )
     float fDiscountMod = _player->GetReputationPriceDiscount(unit);
 
     uint32 count = 0;
-    for(TrainerSpellList::const_iterator itr = trainer_spells->spellList.begin(); itr != trainer_spells->spellList.end(); ++itr)
+    for(TrainerSpellMap::const_iterator itr = trainer_spells->spellList.begin(); itr != trainer_spells->spellList.end(); ++itr)
     {
-        TrainerSpell const* tSpell = *itr;
+        TrainerSpell const* tSpell = &itr->second;
 
         if(!_player->IsSpellFitByClassAndRace(tSpell->spell))
             continue;
@@ -175,13 +175,13 @@ void WorldSession::SendTrainerList( uint64 guid,std::string strTitle )
 
         data << uint32(tSpell->spell);
         data << uint8(_player->GetTrainerSpellState(tSpell));
-        data << uint32(floor(tSpell->spellcost * fDiscountMod));
+        data << uint32(floor(tSpell->spellCost * fDiscountMod));
 
         data << uint32(primary_prof_first_rank ? 1 : 0);    // primary prof. learn confirmation dialog
         data << uint32(primary_prof_first_rank ? 1 : 0);    // must be equal prev. field to have learn button in enabled state
-        data << uint8(tSpell->reqlevel);
-        data << uint32(tSpell->reqskill);
-        data << uint32(tSpell->reqskillvalue);
+        data << uint8(tSpell->reqLevel);
+        data << uint32(tSpell->reqSkill);
+        data << uint32(tSpell->reqSkillValue);
         data << uint32(chain_node ? (chain_node->prev ? chain_node->prev : chain_node->req) : 0);
         data << uint32(chain_node && chain_node->prev ? chain_node->req : 0);
         data << uint32(0);
@@ -232,7 +232,7 @@ void WorldSession::HandleTrainerBuySpellOpcode( WorldPacket & recv_data )
         return;
 
     // apply reputation discount
-    uint32 nSpellCost = uint32(floor(trainer_spell->spellcost * _player->GetReputationPriceDiscount(unit)));
+    uint32 nSpellCost = uint32(floor(trainer_spell->spellCost * _player->GetReputationPriceDiscount(unit)));
 
     // check money requirement
     if(_player->GetMoney() < nSpellCost )
@@ -372,7 +372,7 @@ void WorldSession::HandleSpiritHealerActivateOpcode( WorldPacket & recv_data )
 
 void WorldSession::SendSpiritResurrect()
 {
-    _player->ResurrectPlayer(0.5f,false, true);
+    _player->ResurrectPlayer(0.5f, true);
 
     _player->DurabilityLossAll(0.25f,true);
 
@@ -551,9 +551,9 @@ void WorldSession::SendStablePet(uint64 guid )
 
 void WorldSession::HandleStablePet( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
+    CHECK_PACKET_SIZE(recv_data, 8);
 
-    sLog.outDebug("WORLD: Recv CMSG_STABLE_PET not dispose.");
+    sLog.outDebug("WORLD: Recv CMSG_STABLE_PET");
     uint64 npcGUID;
 
     recv_data >> npcGUID;
@@ -614,7 +614,7 @@ void WorldSession::HandleStablePet( WorldPacket & recv_data )
 
 void WorldSession::HandleUnstablePet( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8+4);
+    CHECK_PACKET_SIZE(recv_data, 8+4);
 
     sLog.outDebug("WORLD: Recv CMSG_UNSTABLE_PET.");
     uint64 npcGUID;
@@ -674,7 +674,7 @@ void WorldSession::HandleUnstablePet( WorldPacket & recv_data )
 
 void WorldSession::HandleBuyStableSlot( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
+    CHECK_PACKET_SIZE(recv_data, 8);
 
     sLog.outDebug("WORLD: Recv CMSG_BUY_STABLE_SLOT.");
     uint64 npcGUID;
@@ -719,7 +719,7 @@ void WorldSession::HandleStableRevivePet( WorldPacket &/* recv_data */)
 
 void WorldSession::HandleStableSwapPet( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8+4);
+    CHECK_PACKET_SIZE(recv_data, 8+4);
 
     sLog.outDebug("WORLD: Recv CMSG_STABLE_SWAP_PET.");
     uint64 npcGUID;
@@ -774,7 +774,7 @@ void WorldSession::HandleStableSwapPet( WorldPacket & recv_data )
 
 void WorldSession::HandleRepairItemOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8+8+1);
+    CHECK_PACKET_SIZE(recv_data, 8+8+1);
 
     sLog.outDebug("WORLD: CMSG_REPAIR_ITEM");
 
