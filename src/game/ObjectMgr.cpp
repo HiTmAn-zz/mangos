@@ -5689,6 +5689,7 @@ void ObjectMgr::LoadQuestRelationsHelper(QuestRelations& map,char const* table)
 void ObjectMgr::LoadGameobjectQuestRelations()
 {
     LoadQuestRelationsHelper(mGOQuestRelations,"gameobject_questrelation");
+    gameeventmgr.ReloadEventQuests();
 
     for(QuestRelations::iterator itr = mGOQuestRelations.begin(); itr != mGOQuestRelations.end(); ++itr)
     {
@@ -5717,7 +5718,8 @@ void ObjectMgr::LoadGameobjectInvolvedRelations()
 void ObjectMgr::LoadCreatureQuestRelations()
 {
     LoadQuestRelationsHelper(mCreatureQuestRelations,"creature_questrelation");
-
+    gameeventmgr.ReloadEventQuests();
+    
     for(QuestRelations::iterator itr = mCreatureQuestRelations.begin(); itr != mCreatureQuestRelations.end(); ++itr)
     {
         CreatureInfo const* cInfo = GetCreatureTemplate(itr->first);
