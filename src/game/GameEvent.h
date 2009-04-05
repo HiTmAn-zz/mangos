@@ -23,6 +23,7 @@
 #include "SharedDefines.h"
 #include "Platform/Define.h"
 #include "Policies/Singleton.h"
+#include "Creature.h"
 
 #define max_ge_check_delay 86400                            // 1 day in seconds
 
