@@ -18,38 +18,20 @@
 
 #include "Common.h"
 #include "Database/DatabaseEnv.h"
+#include "DBCStores.h"
 #include "WorldPacket.h"
-#include "WorldSession.h"
-#include "World.h"
 #include "Player.h"
 #include "Opcodes.h"
 #include "Chat.h"
 #include "Log.h"
 #include "Unit.h"
-#include "ObjectAccessor.h"
 #include "GossipDef.h"
 #include "Language.h"
-#include "MapManager.h"
 #include "BattleGroundMgr.h"
 #include <fstream>
 #include "ObjectMgr.h"
 
-bool ChatHandler::HandleDebugInArcCommand(const char* /*args*/)
-{
-    Object *obj = getSelectedUnit();
-
-    if(!obj)
-    {
-        SendSysMessage(LANG_SELECT_CHAR_OR_CREATURE);
-        return true;
-    }
-
-    SendSysMessage(LANG_NOT_IMPLEMENTED);
-
-    return true;
-}
-
-bool ChatHandler::HandleDebugSpellFailCommand(const char* args)
+bool ChatHandler::HandleDebugSendSpellFailCommand(const char* args)
 {
     if(!args)
         return false;
@@ -59,16 +41,30 @@ bool ChatHandler::HandleDebugSpellFailCommand(const char* args)
         return false;
 
     uint8 failnum = (uint8)atoi(px);
+    if(failnum==0 && *px!='0')
+        return false;
+
+    char* p1 = strtok(NULL, " ");
+    uint8 failarg1 = p1 ? (uint8)atoi(p1) : 0;
+
+    char* p2 = strtok(NULL, " ");
+    uint8 failarg2 = p2 ? (uint8)atoi(p2) : 0;
+
 
     WorldPacket data(SMSG_CAST_FAILED, 5);
     data << uint32(133);
     data << uint8(failnum);
+    if(p1 || p2)
+        data << uint32(failarg1);
+    if(p2)
+        data << uint32(failarg2);
+
     m_session->SendPacket(&data);
 
     return true;
 }
 
-bool ChatHandler::HandleSetPoiCommand(const char* args)
+bool ChatHandler::HandleDebugSendPoiCommand(const char* args)
 {
     Player *pPlayer = m_session->GetPlayer();
     Unit* target = getSelectedUnit();
@@ -94,7 +90,7 @@ bool ChatHandler::HandleSetPoiCommand(const char* args)
     return true;
 }
 
-bool ChatHandler::HandleEquipErrorCommand(const char* args)
+bool ChatHandler::HandleDebugSendEquipErrorCommand(const char* args)
 {
     if(!args)
         return false;
@@ -104,7 +100,7 @@ bool ChatHandler::HandleEquipErrorCommand(const char* args)
     return true;
 }
 
-bool ChatHandler::HandleSellErrorCommand(const char* args)
+bool ChatHandler::HandleDebugSendSellErrorCommand(const char* args)
 {
     if(!args)
         return false;
@@ -114,7 +110,7 @@ bool ChatHandler::HandleSellErrorCommand(const char* args)
     return true;
 }
 
-bool ChatHandler::HandleBuyErrorCommand(const char* args)
+bool ChatHandler::HandleDebugSendBuyErrorCommand(const char* args)
 {
     if(!args)
         return false;
@@ -124,7 +120,7 @@ bool ChatHandler::HandleBuyErrorCommand(const char* args)
     return true;
 }
 
-bool ChatHandler::HandleSendOpcodeCommand(const char* /*args*/)
+bool ChatHandler::HandleDebugSendOpcodeCommand(const char* /*args*/)
 {
     Unit *unit = getSelectedUnit();
     if (!unit || (unit->GetTypeId() != TYPEID_PLAYER))
@@ -201,7 +197,7 @@ bool ChatHandler::HandleSendOpcodeCommand(const char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleUpdateWorldStateCommand(const char* args)
+bool ChatHandler::HandleDebugUpdateWorldStateCommand(const char* args)
 {
     char* w = strtok((char*)args, " ");
     char* s = strtok(NULL, " ");
@@ -215,18 +211,70 @@ bool ChatHandler::HandleUpdateWorldStateCommand(const char* args)
     return true;
 }
 
-bool ChatHandler::HandlePlaySound2Command(const char* args)
+bool ChatHandler::HandleDebugPlayCinematicCommand(const char* args)
 {
-    if(!args)
+    // USAGE: .debug play cinematic #cinematicid
+    // #cinematicid - ID decimal number from CinemaicSequences.dbc (1st column)
+    if( !*args )
+    {
+        SendSysMessage(LANG_BAD_VALUE);
+        SetSentErrorMessage(true);
         return false;
+    }
 
-    uint32 soundid = atoi(args);
-    m_session->GetPlayer()->PlaySound(soundid, false);
+    uint32 dwId = atoi((char*)args);
+
+    if(!sCinematicSequencesStore.LookupEntry(dwId))
+    {
+        PSendSysMessage(LANG_CINEMATIC_NOT_EXIST, dwId);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    m_session->GetPlayer()->SendCinematicStart(dwId);
+    return true;
+}
+
+//Play sound
+bool ChatHandler::HandleDebugPlaySoundCommand(const char* args)
+{
+    // USAGE: .debug playsound #soundid
+    // #soundid - ID decimal number from SoundEntries.dbc (1st column)
+    if( !*args )
+    {
+        SendSysMessage(LANG_BAD_VALUE);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint32 dwSoundId = atoi((char*)args);
+
+    if(!sSoundEntriesStore.LookupEntry(dwSoundId))
+    {
+        PSendSysMessage(LANG_SOUND_NOT_EXIST, dwSoundId);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    Unit* unit = getSelectedUnit();
+    if(!unit)
+    {
+        SendSysMessage(LANG_SELECT_CHAR_OR_CREATURE);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if(m_session->GetPlayer()->GetSelection())
+        unit->PlayDistanceSound(dwSoundId,m_session->GetPlayer());
+    else
+        unit->PlayDirectSound(dwSoundId,m_session->GetPlayer());
+
+    PSendSysMessage(LANG_YOU_HEAR_SOUND, dwSoundId);
     return true;
 }
 
 //Send notification in channel
-bool ChatHandler::HandleSendChannelNotifyCommand(const char* args)
+bool ChatHandler::HandleDebugSendChannelNotifyCommand(const char* args)
 {
     if(!args)
         return false;
@@ -244,7 +292,7 @@ bool ChatHandler::HandleSendChannelNotifyCommand(const char* args)
 }
 
 //Send notification in chat
-bool ChatHandler::HandleSendChatMsgCommand(const char* args)
+bool ChatHandler::HandleDebugSendChatMsgCommand(const char* args)
 {
     if(!args)
         return false;
@@ -257,14 +305,14 @@ bool ChatHandler::HandleSendChatMsgCommand(const char* args)
     return true;
 }
 
-bool ChatHandler::HandleSendQuestPartyMsgCommand(const char* args)
+bool ChatHandler::HandleDebugSendQuestPartyMsgCommand(const char* args)
 {
     uint32 msg = atol((char*)args);
     m_session->GetPlayer()->SendPushToPartyResponse(m_session->GetPlayer(), msg);
     return true;
 }
 
-bool ChatHandler::HandleGetLootRecipient(const char* /*args*/)
+bool ChatHandler::HandleDebugGetLootRecipient(const char* /*args*/)
 {
     Creature* target = getSelectedCreature();
     if(!target)
@@ -274,14 +322,14 @@ bool ChatHandler::HandleGetLootRecipient(const char* /*args*/)
     return true;
 }
 
-bool ChatHandler::HandleSendQuestInvalidMsgCommand(const char* args)
+bool ChatHandler::HandleDebugSendQuestInvalidMsgCommand(const char* args)
 {
     uint32 msg = atol((char*)args);
     m_session->GetPlayer()->SendCanTakeQuestResponse(msg);
     return true;
 }
 
-bool ChatHandler::HandleGetItemState(const char* args)
+bool ChatHandler::HandleDebugGetItemState(const char* args)
 {
     if (!args)
         return false;
@@ -524,5 +572,40 @@ bool ChatHandler::HandleDebugBattlegroundCommand(const char * /*args*/)
 bool ChatHandler::HandleDebugArenaCommand(const char * /*args*/)
 {
     sBattleGroundMgr.ToggleArenaTesting();
+    return true;
+}
+
+bool ChatHandler::HandleDebugSetItemFlagCommand(const char* args)
+{
+    if(!args)
+        return false;
+
+    char* e = strtok((char*)args, " ");
+    char* f = strtok(NULL, " ");
+
+    if (!e || !f)
+        return false;
+
+    uint32 guid = (uint32)atoi(e);
+    uint32 flag = (uint32)atoi(f);
+
+    Item *i = m_session->GetPlayer()->GetItemByGuid(MAKE_NEW_GUID(guid, 0, HIGHGUID_ITEM));
+
+    if(!i)
+        return false;
+
+    i->SetUInt32Value(ITEM_FIELD_FLAGS, flag);
+
+    return true;
+}
+
+//show animation
+bool ChatHandler::HandleDebugAnimCommand(const char* args)
+{
+    if (!*args)
+        return false;
+
+    uint32 anim_id = atoi((char*)args);
+    m_session->GetPlayer()->HandleEmoteCommand(anim_id);
     return true;
 }

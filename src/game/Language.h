@@ -689,7 +689,12 @@ enum MangosStrings
     LANG_NEED_CHARACTER_NAME            = 807,
     LANG_PLAYER_NOT_EXIST_OR_OFFLINE    = 808,
     LANG_ACCOUNT_FOR_PLAYER_NOT_FOUND   = 809,
-    // Room for in-game strings           810-999 not used
+    LANG_GUILD_MASTER                   = 811,
+    LANG_GUILD_OFFICER                  = 812,
+    LANG_GUILD_VETERAN                  = 813,
+    LANG_GUILD_MEMBER                   = 814,
+    LANG_GUILD_INITIATE                 = 815,
+    // Room for in-game strings           816-999 not used
 
     // Level 4 (CLI only commands)
     LANG_COMMAND_EXIT                   = 1000,
@@ -704,7 +709,10 @@ enum MangosStrings
     LANG_CHARACTER_DELETED              = 1009,
     LANG_ACCOUNT_LIST_HEADER            = 1010,
     LANG_ACCOUNT_LIST_ERROR             = 1011,
-    // Room for more level 4              1012-1099 not used
+    LANG_ACCOUNT_LIST_BAR               = 1012,
+    LANG_ACCOUNT_LIST_LINE              = 1013,
+    LANG_ACCOUNT_LIST_EMPTY             = 1014,
+    // Room for more level 4              1015-1099 not used
 
     // Level 3 (continue)
     LANG_ACCOUNT_SETADDON               = 1100,
@@ -732,7 +740,11 @@ enum MangosStrings
     LANG_SKILL_VALUES                   = 1122,
     // Room for more level 3              1123-1199 not used
 
-    // FREE IDS                           1200-9999
+    // Debug commands
+    LANG_CINEMATIC_NOT_EXIST            = 1200,
+    // Room for more debug                1201-1299 not used
+
+    // FREE IDS                           1300-9999
 
     // Use for not-in-offcial-sources patches
     //                                    10000-10999

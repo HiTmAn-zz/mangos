@@ -20,15 +20,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "dbcfile.h"
+#include "DBCFileLoader.h"
 
-DBCFile::DBCFile()
+DBCFileLoader::DBCFileLoader()
 {
     data = NULL;
     fieldsOffset = NULL;
 }
 
-bool DBCFile::Load(const char *filename, const char *fmt)
+bool DBCFileLoader::Load(const char *filename, const char *fmt)
 {
 
     uint32 header;
@@ -37,23 +37,35 @@ bool DBCFile::Load(const char *filename, const char *fmt)
         delete [] data;
         data=NULL;
     }
+
     FILE * f=fopen(filename,"rb");
     if(!f)return false;
 
-    fread(&header,4,1,f);                                   // Number of records
+    if(fread(&header,4,1,f)!=1)                             // Number of records
+        return false;
+
     EndianConvert(header);
     if(header!=0x43424457)
-    {
-        //printf("not dbc file");
         return false;                                       //'WDBC'
-    }
-    fread(&recordCount,4,1,f);                              // Number of records
+
+    if(fread(&recordCount,4,1,f)!=1)                        // Number of records
+        return false;
+
     EndianConvert(recordCount);
-    fread(&fieldCount,4,1,f);                               // Number of fields
+
+    if(fread(&fieldCount,4,1,f)!=1)                         // Number of fields
+        return false;
+
     EndianConvert(fieldCount);
-    fread(&recordSize,4,1,f);                               // Size of a record
+
+    if(fread(&recordSize,4,1,f)!=1)                         // Size of a record
+        return false;
+
     EndianConvert(recordSize);
-    fread(&stringSize,4,1,f);                               // String size
+
+    if(fread(&stringSize,4,1,f)!=1)                         // String size
+        return false;
+
     EndianConvert(stringSize);
 
     fieldsOffset = new uint32[fieldCount];
@@ -69,12 +81,15 @@ bool DBCFile::Load(const char *filename, const char *fmt)
 
     data = new unsigned char[recordSize*recordCount+stringSize];
     stringTable = data + recordSize*recordCount;
-    fread(data,recordSize*recordCount+stringSize,1,f);
+
+    if(fread(data,recordSize*recordCount+stringSize,1,f)!=1)
+        return false;
+
     fclose(f);
     return true;
 }
 
-DBCFile::~DBCFile()
+DBCFileLoader::~DBCFileLoader()
 {
     if(data)
         delete [] data;
@@ -82,13 +97,13 @@ DBCFile::~DBCFile()
         delete [] fieldsOffset;
 }
 
-DBCFile::Record DBCFile::getRecord(size_t id)
+DBCFileLoader::Record DBCFileLoader::getRecord(size_t id)
 {
     assert(data);
     return Record(*this, data + id*recordSize);
 }
 
-uint32 DBCFile::GetFormatRecordSize(const char * format,int32* index_pos)
+uint32 DBCFileLoader::GetFormatRecordSize(const char * format,int32* index_pos)
 {
     uint32 recordsize = 0;
     int32 i = -1;
@@ -120,7 +135,7 @@ uint32 DBCFile::GetFormatRecordSize(const char * format,int32* index_pos)
     return recordsize;
 }
 
-char* DBCFile::AutoProduceData(const char* format, uint32& records, char**& indexTable)
+char* DBCFileLoader::AutoProduceData(const char* format, uint32& records, char**& indexTable)
 {
     /*
     format STRING, NA, FLOAT,NA,INT <=>
@@ -203,7 +218,7 @@ char* DBCFile::AutoProduceData(const char* format, uint32& records, char**& inde
     return dataTable;
 }
 
-char* DBCFile::AutoProduceStrings(const char* format, char* dataTable)
+char* DBCFileLoader::AutoProduceStrings(const char* format, char* dataTable)
 {
     if(strlen(format)!=fieldCount)
         return NULL;
