@@ -97,7 +97,6 @@ class GameEventMgr
         uint32 Initialize();
         bool StartEvent(uint16 event_id, bool overwrite = false);
         void StopEvent(uint16 event_id, bool overwrite = false);
-        void ReloadEventQuests();
         void HandleQuestComplete(uint32 quest_id);  // called on world event type quest completions
         void HandleWorldEventGossip(Player * plr, Creature * c);
         uint32 GetNPCFlag(Creature * cr);
