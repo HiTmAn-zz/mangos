@@ -954,6 +954,8 @@ void World::LoadConfigSettings(bool reload)
         m_MaxVisibleDistanceInFlight = MAX_VISIBILITY_DISTANCE - m_VisibleObjectGreyDistance;
     }
 
+    m_configs[CONFIG_NUMTHREADS] = sConfig.GetIntDefault("MapUpdate.Threads",1);
+
     ///- Read the "Data" directory from the config file
     std::string dataPath = sConfig.GetStringDefault("DataDir","./");
     if( dataPath.at(dataPath.length()-1)!='/' && dataPath.at(dataPath.length()-1)!='\\' )
@@ -1490,7 +1492,11 @@ void World::Update(uint32 diff)
         if (!m_scriptSchedule.empty())
             ScriptsProcess();
 
-        sBattleGroundMgr.Update(diff);
+#pragma omp task nowait
+        {
+             sBattleGroundMgr.Update(diff);
+        }
+#pragma omp task nowait
     }
 
     // execute callbacks from sql queries that were queued recently

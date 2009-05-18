@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
+#include <omp.h>
 #include "MapManager.h"
 #include "InstanceSaveMgr.h"
 #include "Policies/SingletonImp.h"
@@ -247,10 +248,26 @@ MapManager::Update(uint32 diff)
 
     ObjectAccessor::Instance().UpdatePlayers(i_timer.GetCurrent());
 
-    for(MapMapType::iterator iter=i_maps.begin(); iter != i_maps.end(); ++iter)
+    uint32 i=0;
+    MapMapType::iterator iter;
+    std::vector<Map*> update_queue(i_maps.size());
+	omp_set_num_threads(sWorld.getConfig(CONFIG_NUMTHREADS));
+	for(iter = i_maps.begin(), i=0;iter != i_maps.end(); ++iter, i++)
+		update_queue[i]=iter->second;		
+/*
+	If someone is asking me WTF am i doing here; answer is simple:
+	gomp in gcc <4.4 version cannot parallelise loops using random access iterators
+	so until gcc 4.4 isnt standard, ill use that workaround.
+	If the support for iterators was there, all that id do here would be:
+	#pragma omp parallel for schedule(dynamic) private(iter)
+	Now i have to use that array update_queue.
+*/
+#pragma omp parallel for schedule(dynamic) private(i) shared(update_queue)
+    for(int32 i = 0; i < i_maps.size(); ++i)
+
     {
         checkAndCorrectGridStatesArray();                   // debugging code, should be deleted some day
-        iter->second->Update(i_timer.GetCurrent());
+        update_queue[i]->Update(i_timer.GetCurrent());	
     }
 
     ObjectAccessor::Instance().Update(i_timer.GetCurrent());
@@ -262,8 +279,17 @@ MapManager::Update(uint32 diff)
 
 void MapManager::DoDelayedMovesAndRemoves()
 {
-    for(MapMapType::iterator iter=i_maps.begin(); iter != i_maps.end(); ++iter)
-        iter->second->DoDelayedMovesAndRemoves();
+    int i =0;
+    std::vector<Map*> update_queue(i_maps.size());
+    MapMapType::iterator iter;
+    for(iter = i_maps.begin();iter != i_maps.end(); ++iter, i++)
+	update_queue[i] = iter->second;
+
+    omp_set_num_threads(sWorld.getConfig(CONFIG_NUMTHREADS));
+    
+#pragma omp parallel for schedule(dynamic) private(i) shared(update_queue)
+    for(i=0;i<i_maps.size();i++)
+	update_queue[i]->DoDelayedMovesAndRemoves();
 }
 
 bool MapManager::ExistMapAndVMap(uint32 mapid, float x,float y)
