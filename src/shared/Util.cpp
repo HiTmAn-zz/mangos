@@ -30,9 +30,9 @@ int32 irand (int32 min, int32 max)
 {
     int32 result;
 #pragma omp critical (mtrand)
-    {
-    result = (mtRand.get ().randInt (max - min)) + min;
-    }
+{
+    result = (mtRand->randInt (max - min)) + min;
+}
     return result;
 }
 
@@ -41,14 +41,19 @@ uint32 urand (uint32 min, uint32 max)
     uint32 result;
 #pragma omp critical (mtrand)
 {
-    result = mtRand.get ().randInt (max - min) + min;
+    result = mtRand->randInt (max - min) + min;
 }
     return result;
 }
 
 int32 rand32 ()
 {
-    return mtRand->randInt ();
+   int32 result;
+#pragma omp critical (mtrand)
+{
+  result =  mtRand->randInt ();
+}
+  return result;
 }
 
 double rand_norm(void)
@@ -56,7 +61,7 @@ double rand_norm(void)
     double result;
 #pragma omp critical (mtrand)
 {
-    result =  mtRand.get ().randExc ();
+    result =  mtRand->randExc ();
 }
     return result;
 }
@@ -66,7 +71,7 @@ double rand_chance (void)
     double result;
 #pragma omp critical (mtrand)
 {
-    result = mtRand.get ().randExc (100.0);
+    result = mtRand->randExc (100.0);
 }
     return result;
 }
