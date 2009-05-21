@@ -1492,11 +1492,11 @@ void World::Update(uint32 diff)
         if (!m_scriptSchedule.empty())
             ScriptsProcess();
 
-#pragma omp task nowait
-        {
+//#pragma omp task nowait
+//        {
              sBattleGroundMgr.Update(diff);
-        }
-#pragma omp task nowait
+//        }
+//#pragma omp task nowait
     }
 
     // execute callbacks from sql queries that were queued recently
