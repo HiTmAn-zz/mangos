@@ -30,6 +30,7 @@
 #include "GameObject.h"
 #include "Player.h"
 #include "Unit.h"
+#include "CreatureAI.h"
 
 class Player;
 //class Map;
@@ -414,6 +415,22 @@ namespace MaNGOS
         template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
     };
 
+    template<class Do>
+    struct MANGOS_DLL_DECL CreatureWorker
+    {
+        Do& i_do;
+
+        CreatureWorker(WorldObject const* searcher, Do& _do) : i_do(_do) {}
+
+        void Visit(CreatureMapType &m)
+        {
+            for(CreatureMapType::iterator itr=m.begin(); itr != m.end(); ++itr)
+                i_do(itr->getSource());
+        }
+
+        template<class NOT_INTERESTED> void Visit(GridRefManager<NOT_INTERESTED> &) {}
+    };
+
     // Player searchers
 
     template<class Check>
@@ -725,8 +742,8 @@ namespace MaNGOS
     class AnyAoETargetUnitInObjectRangeCheck
     {
         public:
-            AnyAoETargetUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range)
-                : i_obj(obj), i_funit(funit), i_range(range)
+            AnyAoETargetUnitInObjectRangeCheck(WorldObject const* obj, Unit const* funit, float range, bool hitHidden = true)
+                : i_obj(obj), i_funit(funit), i_range(range), i_hitHidden(hitHidden)
             {
                 Unit const* check = i_funit;
                 Unit const* owner = i_funit->GetOwner();
@@ -741,6 +758,8 @@ namespace MaNGOS
                     return false;
                 if(u->GetTypeId()==TYPEID_UNIT && ((Creature*)u)->isTotem())
                     return false;
+                if (!i_hitHidden && !u->isVisibleForOrDetect(i_funit, false))
+                    return false;
 
                 if(( i_targetForPlayer ? !i_funit->IsFriendlyTo(u) : i_funit->IsHostileTo(u) )&& i_obj->IsWithinDistInMap(u, i_range))
                     return true;
@@ -748,9 +767,42 @@ namespace MaNGOS
                 return false;
             }
         private:
+            bool i_hitHidden;
             bool i_targetForPlayer;
             WorldObject const* i_obj;
             Unit const* i_funit;
+            float i_range;
+    };
+
+    // do attack at call of help to friendly crearture
+    class CallOfHelpCreatureInRangeDo
+    {
+        public:
+            CallOfHelpCreatureInRangeDo(Unit* funit, Unit* enemy, float range)
+                : i_funit(funit), i_enemy(enemy), i_range(range)
+            {}
+            void operator()(Creature* u)
+            {
+                if (u == i_funit)
+                    return;
+
+                if (!u->CanAssistTo(i_funit, i_enemy, false))
+                    return;
+
+                // too far
+                if (!i_funit->IsWithinDistInMap(u, i_range))
+                    return;
+
+                // only if see assisted creature
+                if (!i_funit->IsWithinLOSInMap(u))
+                    return;
+
+                if (u->AI())
+                    u->AI()->AttackStart(i_enemy);
+            }
+        private:
+            Unit* const i_funit;
+            Unit* const i_enemy;
             float i_range;
     };
 
@@ -810,6 +862,38 @@ namespace MaNGOS
             Unit* const i_funit;
             Unit* const i_enemy;
             float i_range;
+    };
+
+    class NearestAssistCreatureInCreatureRangeCheck
+    {
+        public:
+            NearestAssistCreatureInCreatureRangeCheck(Creature* obj, Unit* enemy, float range)
+                : i_obj(obj), i_enemy(enemy), i_range(range) {}
+
+            bool operator()(Creature* u)
+            {
+                if(u == i_obj)
+                    return false;
+                if(!u->CanAssistTo(i_obj,i_enemy))
+                    return false;
+
+                if(!i_obj->IsWithinDistInMap(u, i_range))
+                    return false;
+
+                if(!i_obj->IsWithinLOSInMap(u))
+                    return false;
+
+                i_range = i_obj->GetDistance(u);            // use found unit range as new range limit for next check
+                return true;
+            }
+            float GetLastRange() const { return i_range; }
+        private:
+            Creature* const i_obj;
+            Unit* const i_enemy;
+            float  i_range;
+
+            // prevent clone this object
+            NearestAssistCreatureInCreatureRangeCheck(NearestAssistCreatureInCreatureRangeCheck const&);
     };
 
     // Success at unit in range, range update for next check (this can be use with CreatureLastSearcher to find nearest creature)

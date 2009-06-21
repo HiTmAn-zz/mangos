@@ -372,7 +372,7 @@ int WorldSocket::handle_input_header (void)
 
     ACE_ASSERT (m_Header.length () == sizeof (ClientPktHeader));
 
-    m_Crypt.DecryptRecv ((ACE_UINT8*) m_Header.rd_ptr (), sizeof (ClientPktHeader));
+    m_Crypt.DecryptRecv ((uint8*) m_Header.rd_ptr (), sizeof (ClientPktHeader));
 
     ClientPktHeader& header = *((ClientPktHeader*) m_Header.rd_ptr ());
 
@@ -430,7 +430,7 @@ int WorldSocket::handle_input_payload (void)
 
 int WorldSocket::handle_input_missing_data (void)
 {
-    char buf [1024];
+    char buf [4096];
 
     ACE_Data_Block db ( sizeof (buf),
                         ACE_Message_Block::MB_DATA,

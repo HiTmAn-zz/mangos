@@ -86,7 +86,7 @@ bool ChatHandler::HandleMuteCommand(const char* args)
     if (target)
         target->GetSession()->m_muteTime = mutetime;
 
-    loginDatabase.PExecute("UPDATE account SET mutetime = " I64FMTD " WHERE id = '%u'",uint64(mutetime), account_id );
+    loginDatabase.PExecute("UPDATE account SET mutetime = " UI64FMTD " WHERE id = '%u'",uint64(mutetime), account_id );
 
     if(target)
         ChatHandler(target).PSendSysMessage(LANG_YOUR_CHAT_DISABLED, notspeaktime);
@@ -825,7 +825,7 @@ bool ChatHandler::HandleLookupFactionCommand(const char* args)
         {
             FactionState const* repState = target ? target->GetReputationMgr().GetState(factionEntry) : NULL;
 
-            int loc = m_session ? m_session->GetSessionDbcLocale() : sWorld.GetDefaultDbcLocale();
+            int loc = GetSessionDbcLocale();
             std::string name = factionEntry->name[loc];
             if(name.empty())
                 continue;
@@ -835,7 +835,7 @@ bool ChatHandler::HandleLookupFactionCommand(const char* args)
                 loc = 0;
                 for(; loc < MAX_LOCALE; ++loc)
                 {
-                    if(m_session && loc==m_session->GetSessionDbcLocale())
+                    if(loc==GetSessionDbcLocale())
                         continue;
 
                     name = factionEntry->name[loc];
@@ -980,13 +980,13 @@ bool ChatHandler::HandleModifyRepCommand(const char * args)
 
     if (factionEntry->reputationListID < 0)
     {
-        PSendSysMessage(LANG_COMMAND_FACTION_NOREP_ERROR, factionEntry->name[m_session->GetSessionDbcLocale()], factionId);
+        PSendSysMessage(LANG_COMMAND_FACTION_NOREP_ERROR, factionEntry->name[GetSessionDbcLocale()], factionId);
         SetSentErrorMessage(true);
         return false;
     }
 
     target->GetReputationMgr().SetReputation(factionEntry,amount);
-    PSendSysMessage(LANG_COMMAND_MODIFY_REP, factionEntry->name[m_session->GetSessionDbcLocale()], factionId,
+    PSendSysMessage(LANG_COMMAND_MODIFY_REP, factionEntry->name[GetSessionDbcLocale()], factionId,
         GetNameLink(target).c_str(), target->GetReputationMgr().GetReputation(factionEntry));
     return true;
 }
@@ -2002,14 +2002,10 @@ bool ChatHandler::HandleKickPlayerCommand(const char *args)
 //show info of player
 bool ChatHandler::HandlePInfoCommand(const char* args)
 {
-    char* nameStr;
-    char* subcommandStr;
-    extractOptFirstArg((char*)args,&nameStr,&subcommandStr);
-
     Player* target;
     uint64 target_guid;
     std::string target_name;
-    if(!extractPlayerTarget(nameStr,&target,&target_guid,&target_name))
+    if(!extractPlayerTarget((char*)args,&target,&target_guid,&target_name))
         return false;
 
     uint32 accId = 0;
@@ -2092,43 +2088,6 @@ bool ChatHandler::HandlePInfoCommand(const char* args)
     uint32 copp = (money % GOLD) % SILVER;
     PSendSysMessage(LANG_PINFO_LEVEL,  timeStr.c_str(), level, gold,silv,copp );
 
-    if( subcommandStr && strncmp(subcommandStr, "rep", 3) == 0 )
-    {
-        if(!target)
-        {
-            // rep option not implemented for offline case
-            SendSysMessage(LANG_PINFO_NO_REP);
-            SetSentErrorMessage(true);
-            return false;
-        }
-
-        FactionStateList const& targetFSL = target->GetReputationMgr().GetStateList();
-        for(FactionStateList::const_iterator itr = targetFSL.begin(); itr != targetFSL.end(); ++itr)
-        {
-            FactionEntry const *factionEntry = sFactionStore.LookupEntry(itr->second.ID);
-            char const* factionName = factionEntry ? factionEntry->name[m_session->GetSessionDbcLocale()] : "#Not found#";
-            ReputationRank rank = target->GetReputationMgr().GetRank(factionEntry);
-            std::string rankName = GetMangosString(ReputationRankStrIndex[rank]);
-            std::ostringstream ss;
-            ss << itr->second.ID << ": |cffffffff|Hfaction:" << itr->second.ID << "|h[" << factionName << "]|h|r " << rankName << "|h|r ("
-               << target->GetReputationMgr().GetReputation(factionEntry) << ")";
-
-            if(itr->second.Flags & FACTION_FLAG_VISIBLE)
-                ss << GetMangosString(LANG_FACTION_VISIBLE);
-            if(itr->second.Flags & FACTION_FLAG_AT_WAR)
-                ss << GetMangosString(LANG_FACTION_ATWAR);
-            if(itr->second.Flags & FACTION_FLAG_PEACE_FORCED)
-                ss << GetMangosString(LANG_FACTION_PEACE_FORCED);
-            if(itr->second.Flags & FACTION_FLAG_HIDDEN)
-                ss << GetMangosString(LANG_FACTION_HIDDEN);
-            if(itr->second.Flags & FACTION_FLAG_INVISIBLE_FORCED)
-                ss << GetMangosString(LANG_FACTION_INVISIBLE_FORCED);
-            if(itr->second.Flags & FACTION_FLAG_INACTIVE)
-                ss << GetMangosString(LANG_FACTION_INACTIVE);
-
-            SendSysMessage(ss.str().c_str());
-        }
-    }
     return true;
 }
 
@@ -3477,6 +3436,47 @@ bool ChatHandler::HandleCharacterRenameCommand(const char* args)
     return true;
 }
 
+bool ChatHandler::HandleCharacterReputationCommand(const char* args)
+{
+    Player* target;
+    if(!extractPlayerTarget((char*)args,&target))
+        return false;
+
+    LocaleConstant loc = GetSessionDbcLocale();
+
+    FactionStateList const& targetFSL = target->GetReputationMgr().GetStateList();
+    for(FactionStateList::const_iterator itr = targetFSL.begin(); itr != targetFSL.end(); ++itr)
+    {
+        FactionEntry const *factionEntry = sFactionStore.LookupEntry(itr->second.ID);
+        char const* factionName = factionEntry ? factionEntry->name[loc] : "#Not found#";
+        ReputationRank rank = target->GetReputationMgr().GetRank(factionEntry);
+        std::string rankName = GetMangosString(ReputationRankStrIndex[rank]);
+        std::ostringstream ss;
+        if (m_session)
+            ss << itr->second.ID << " - |cffffffff|Hfaction:" << itr->second.ID << "|h[" << factionName << " " << localeNames[loc] << "]|h|r";
+        else
+            ss << itr->second.ID << " - " << factionName << " " << localeNames[loc];
+
+        ss << " " << rankName << " (" << target->GetReputationMgr().GetReputation(factionEntry) << ")";
+
+        if(itr->second.Flags & FACTION_FLAG_VISIBLE)
+            ss << GetMangosString(LANG_FACTION_VISIBLE);
+        if(itr->second.Flags & FACTION_FLAG_AT_WAR)
+            ss << GetMangosString(LANG_FACTION_ATWAR);
+        if(itr->second.Flags & FACTION_FLAG_PEACE_FORCED)
+            ss << GetMangosString(LANG_FACTION_PEACE_FORCED);
+        if(itr->second.Flags & FACTION_FLAG_HIDDEN)
+            ss << GetMangosString(LANG_FACTION_HIDDEN);
+        if(itr->second.Flags & FACTION_FLAG_INVISIBLE_FORCED)
+            ss << GetMangosString(LANG_FACTION_INVISIBLE_FORCED);
+        if(itr->second.Flags & FACTION_FLAG_INACTIVE)
+            ss << GetMangosString(LANG_FACTION_INACTIVE);
+
+        SendSysMessage(ss.str().c_str());
+    }
+    return true;
+}
+
 //change standstate
 bool ChatHandler::HandleModifyStandStateCommand(const char* args)
 {
@@ -3768,6 +3768,40 @@ bool ChatHandler::HandleCombatStopCommand(const char* args)
     return true;
 }
 
+void ChatHandler::HandleLearnSkillRecipesHelper(Player* player,uint32 skill_id)
+{
+    uint32 classmask = player->getClassMask();
+
+    for (uint32 j = 0; j < sSkillLineAbilityStore.GetNumRows(); ++j)
+    {
+        SkillLineAbilityEntry const *skillLine = sSkillLineAbilityStore.LookupEntry(j);
+        if (!skillLine)
+            continue;
+
+        // wrong skill
+        if( skillLine->skillId != skill_id)
+            continue;
+
+        // not high rank
+        if(skillLine->forward_spellid )
+            continue;
+
+        // skip racial skills
+        if (skillLine->racemask != 0)
+            continue;
+
+        // skip wrong class skills
+        if( skillLine->classmask && (skillLine->classmask & classmask) == 0)
+            continue;
+
+        SpellEntry const* spellInfo = sSpellStore.LookupEntry(skillLine->spellId);
+        if(!spellInfo || !SpellMgr::IsSpellValid(spellInfo,player,false))
+            continue;
+
+        player->learnSpell(skillLine->spellId);
+    }
+}
+
 bool ChatHandler::HandleLearnAllCraftsCommand(const char* /*args*/)
 {
     uint32 classmask = m_session->GetPlayer()->getClassMask();
@@ -3778,31 +3812,9 @@ bool ChatHandler::HandleLearnAllCraftsCommand(const char* /*args*/)
         if( !skillInfo )
             continue;
 
-        if( skillInfo->categoryId == SKILL_CATEGORY_PROFESSION || skillInfo->categoryId == SKILL_CATEGORY_SECONDARY )
+        if (skillInfo->categoryId == SKILL_CATEGORY_PROFESSION || skillInfo->categoryId == SKILL_CATEGORY_SECONDARY)
         {
-            for (uint32 j = 0; j < sSkillLineAbilityStore.GetNumRows(); ++j)
-            {
-                SkillLineAbilityEntry const *skillLine = sSkillLineAbilityStore.LookupEntry(j);
-                if( !skillLine )
-                    continue;
-
-                // skip racial skills
-                if( skillLine->racemask != 0 )
-                    continue;
-
-                // skip wrong class skills
-                if( skillLine->classmask && (skillLine->classmask & classmask) == 0)
-                    continue;
-
-                if( skillLine->skillId != i || skillLine->forward_spellid )
-                    continue;
-
-                SpellEntry const* spellInfo = sSpellStore.LookupEntry(skillLine->spellId);
-                if(!spellInfo || !SpellMgr::IsSpellValid(spellInfo,m_session->GetPlayer(),false))
-                    continue;
-
-                m_session->GetPlayer()->learnSpell(skillLine->spellId);
-            }
+            HandleLearnSkillRecipesHelper(m_session->GetPlayer(),skillInfo->id);
         }
     }
 
@@ -3835,54 +3847,56 @@ bool ChatHandler::HandleLearnAllRecipesCommand(const char* args)
 
     uint32 classmask = m_session->GetPlayer()->getClassMask();
 
-    for (uint32 i = 0; i < sSkillLineStore.GetNumRows(); ++i)
+    std::string name;
+
+    SkillLineEntry const *targetSkillInfo = NULL;
+    for (uint32 i = 1; i < sSkillLineStore.GetNumRows(); ++i)
     {
         SkillLineEntry const *skillInfo = sSkillLineStore.LookupEntry(i);
-        if( !skillInfo )
+        if (!skillInfo)
             continue;
 
-        if( skillInfo->categoryId != SKILL_CATEGORY_PROFESSION &&
-            skillInfo->categoryId != SKILL_CATEGORY_SECONDARY )
+        if (skillInfo->categoryId != SKILL_CATEGORY_PROFESSION && skillInfo->categoryId != SKILL_CATEGORY_SECONDARY)
             continue;
 
-        int loc = m_session->GetSessionDbcLocale();
-        std::string name = skillInfo->name[loc];
+        int loc = GetSessionDbcLocale();
+        name = skillInfo->name[loc];
+        if(name.empty())
+            continue;
 
-        if(Utf8FitTo(name, wnamepart))
+        if (!Utf8FitTo(name, wnamepart))
         {
-            for (uint32 j = 0; j < sSkillLineAbilityStore.GetNumRows(); ++j)
+            loc = 0;
+            for(; loc < MAX_LOCALE; ++loc)
             {
-                SkillLineAbilityEntry const *skillLine = sSkillLineAbilityStore.LookupEntry(j);
-                if( !skillLine )
+                if(loc==GetSessionDbcLocale())
                     continue;
 
-                if( skillLine->skillId != i || skillLine->forward_spellid )
+                name = skillInfo->name[loc];
+                if(name.empty())
                     continue;
 
-                // skip racial skills
-                if( skillLine->racemask != 0 )
-                    continue;
-
-                // skip wrong class skills
-                if( skillLine->classmask && (skillLine->classmask & classmask) == 0)
-                    continue;
-
-                SpellEntry const* spellInfo = sSpellStore.LookupEntry(skillLine->spellId);
-                if(!spellInfo || !SpellMgr::IsSpellValid(spellInfo,m_session->GetPlayer(),false))
-                    continue;
-
-                if( !target->HasSpell(spellInfo->Id) )
-                    m_session->GetPlayer()->learnSpell(skillLine->spellId);
+                if (Utf8FitTo(name, wnamepart))
+                    break;
             }
+        }
 
-            uint16 maxLevel = target->GetPureMaxSkillValue(skillInfo->id);
-            target->SetSkill(skillInfo->id, maxLevel, maxLevel);
-            PSendSysMessage(LANG_COMMAND_LEARN_ALL_RECIPES, name.c_str());
-            return true;
+        if(loc < MAX_LOCALE)
+        {
+            targetSkillInfo = skillInfo;
+            break;
         }
     }
 
-    return false;
+    if(!targetSkillInfo)
+        return false;
+
+    HandleLearnSkillRecipesHelper(target,targetSkillInfo->id);
+
+    uint16 maxLevel = target->GetPureMaxSkillValue(targetSkillInfo->id);
+    target->SetSkill(targetSkillInfo->id, maxLevel, maxLevel);
+    PSendSysMessage(LANG_COMMAND_LEARN_ALL_RECIPES, name.c_str());
+    return true;
 }
 
 bool ChatHandler::HandleLookupPlayerIpCommand(const char* args)

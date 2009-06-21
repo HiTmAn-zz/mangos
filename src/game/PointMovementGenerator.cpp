@@ -21,12 +21,14 @@
 #include "Creature.h"
 #include "CreatureAI.h"
 #include "DestinationHolderImp.h"
+#include "World.h"
 
 //----- Point Movement Generator
 template<class T>
 void PointMovementGenerator<T>::Initialize(T &unit)
 {
     unit.StopMoving();
+    unit.addUnitState(UNIT_STAT_MOVING);
     Traveller<T> traveller(unit);
     i_destinationHolder.SetDestination(traveller,i_x,i_y,i_z);
 
@@ -73,3 +75,11 @@ template void PointMovementGenerator<Player>::MovementInform(Player&);
 
 template void PointMovementGenerator<Creature>::Initialize(Creature&);
 template bool PointMovementGenerator<Creature>::Update(Creature&, const uint32 &diff);
+
+void AssistanceMovementGenerator::Finalize(Unit &unit)
+{
+    ((Creature*)&unit)->SetNoCallAssistance(false);
+    ((Creature*)&unit)->CallAssistance();
+    if (unit.isAlive())
+        unit.GetMotionMaster()->MoveSeekAssistanceDistract(sWorld.getConfig(CONFIG_CREATURE_FAMILY_ASSISTANCE_DELAY));
+}

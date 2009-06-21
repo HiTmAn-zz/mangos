@@ -142,6 +142,7 @@ enum CreatureFlagsExtra
     CREATURE_FLAG_EXTRA_NO_CRUSH        = 0x00000020,       // creature can't do crush attacks
     CREATURE_FLAG_EXTRA_NO_XP_AT_KILL   = 0x00000040,       // creature kill not provide XP
     CREATURE_FLAG_EXTRA_INVISIBLE       = 0x00000080,       // creature is always invisible for player (mostly trigger creatures)
+    CREATURE_FLAG_EXTRA_NOT_TAUNTABLE   = 0x00000100,       // creature is immune to taunt auras and effect attack me
 };
 
 // GCC have alternative #pragma pack(N) syntax and old gcc version not support pack(push,N), also any gcc version not support it at some platform
@@ -156,10 +157,8 @@ struct CreatureInfo
 {
     uint32  Entry;
     uint32  HeroicEntry;
-    uint32  DisplayID_A;
-    uint32  DisplayID_A2;
-    uint32  DisplayID_H;
-    uint32  DisplayID_H2;
+    uint32  DisplayID_A[2];
+    uint32  DisplayID_H[2];
     char*   Name;
     char*   SubName;
     char*   IconName;
@@ -187,8 +186,8 @@ struct CreatureInfo
     uint32  family;                                         // enum CreatureFamily values (optional)
     uint32  trainer_type;
     uint32  trainer_spell;
-    uint32  classNum;
-    uint32  race;
+    uint32  trainer_class;
+    uint32  trainer_race;
     float   minrangedmg;
     float   maxrangedmg;
     uint32  rangedattackpower;
@@ -474,7 +473,7 @@ class MANGOS_DLL_SPEC Creature : public Unit
         bool IsOutOfThreatArea(Unit* pVictim) const;
         bool IsImmunedToSpell(SpellEntry const* spellInfo, bool useCharges = false);
                                                             // redefine Unit::IsImmunedToSpell
-        bool IsImmunedToSpellEffect(uint32 effect, uint32 mechanic) const;
+        bool IsImmunedToSpellEffect(SpellEntry const* spellInfo, uint32 index) const;
                                                             // redefine Unit::IsImmunedToSpellEffect
         bool isElite() const
         {
@@ -595,9 +594,13 @@ class MANGOS_DLL_SPEC Creature : public Unit
 
         float GetAttackDistance(Unit const* pl) const;
 
+        void DoFleeToGetAssistance();
+        void CallForHelp(float fRadius);
         void CallAssistance();
         void SetNoCallAssistance(bool val) { m_AlreadyCallAssistance = val; }
-        bool CanAssistTo(const Unit* u, const Unit* enemy) const;
+        void SetNoSearchAssistance(bool val) { m_AlreadySearchedAssistance = val; }
+        bool HasSearchedAssistance() { return m_AlreadySearchedAssistance; }
+        bool CanAssistTo(const Unit* u, const Unit* enemy, bool checkfaction = true) const;
 
         MovementGeneratorType GetDefaultMovementType() const { return m_defaultMovementType; }
         void SetDefaultMovementType(MovementGeneratorType mgt) { m_defaultMovementType = mgt; }
@@ -610,6 +613,8 @@ class MANGOS_DLL_SPEC Creature : public Unit
 
         void RemoveCorpse();
         bool isDeadByDefault() const { return m_isDeadByDefault; };
+
+        void ForcedDespawn();
 
         time_t const& GetRespawnTime() const { return m_respawnTime; }
         time_t GetRespawnTimeEx() const;
@@ -627,6 +632,8 @@ class MANGOS_DLL_SPEC Creature : public Unit
         uint64 lootingGroupLeaderGUID;                      // used to find group which is looting corpse
 
         void SendZoneUnderAttackMessage(Player* attacker);
+
+        void SetInCombatWithZone();
 
         bool hasQuest(uint32 quest_id) const;
         bool hasInvolvedQuest(uint32 quest_id)  const;
@@ -687,6 +694,7 @@ class MANGOS_DLL_SPEC Creature : public Unit
         uint32 m_equipmentId;
 
         bool m_AlreadyCallAssistance;
+        bool m_AlreadySearchedAssistance;
         bool m_regenHealth;
         bool m_AI_locked;
         bool m_isDeadByDefault;

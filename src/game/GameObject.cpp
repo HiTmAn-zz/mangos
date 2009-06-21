@@ -68,8 +68,17 @@ GameObject::~GameObject()
             Unit* owner = ObjectAccessor::GetUnit(*this,owner_guid);
             if(owner)
                 owner->RemoveGameObject(this,false);
-            else if(!IS_PLAYER_GUID(owner_guid))
-                sLog.outError("Delete GameObject (GUID: %u Entry: %u ) that have references in not found creature %u GO list. Crash possible later.",GetGUIDLow(),GetGOInfo()->id,GUID_LOPART(owner_guid));
+            else
+            {
+                char * ownerType = "creature";
+                if(IS_PLAYER_GUID(owner_guid))
+                    ownerType = "player";
+                else if(IS_PET_GUID(owner_guid))
+                    ownerType = "pet";
+
+                sLog.outError("Delete GameObject (GUID: %u Entry: %u SpellId %u LinkedGO %u) that lost references to owner (GUID %u Type '%s') GO list. Crash possible later.",
+                GetGUIDLow(), GetGOInfo()->id, m_spellId, GetLinkedGameObjectEntry(), GUID_LOPART(owner_guid), ownerType);
+            }
         }
     }
 }
@@ -398,7 +407,10 @@ void GameObject::Update(uint32 /*p_time*/)
 
             if(GetOwnerGUID())
             {
-                m_respawnTime = 0;
+                if(Unit* owner = GetOwner())
+                    owner->RemoveGameObject(this, false);
+
+                SetRespawnTime(0);
                 Delete();
                 return;
             }
@@ -470,14 +482,15 @@ void GameObject::getFishLoot(Loot *fishloot, Player* loot_owner)
 {
     fishloot->clear();
 
-    uint32 subzone = GetAreaId();
+    uint32 zone, subzone;
+    GetZoneAndAreaId(zone,subzone);
 
     // if subzone loot exist use it
     if(LootTemplates_Fishing.HaveLootFor(subzone))
         fishloot->FillLoot(subzone, LootTemplates_Fishing, loot_owner,true);
     // else use zone loot
     else
-        fishloot->FillLoot(GetZoneId(), LootTemplates_Fishing, loot_owner,true);
+        fishloot->FillLoot(zone, LootTemplates_Fishing, loot_owner,true);
 }
 
 void GameObject::SaveToDB()
@@ -932,7 +945,7 @@ void GameObject::Use(Unit* user)
                 // fallback, will always work
                 player->TeleportTo(GetMapId(), GetPositionX(), GetPositionY(), GetPositionZ(), GetOrientation(),TELE_TO_NOT_LEAVE_TRANSPORT | TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET);
             }
-            player->SetStandState(PLAYER_STATE_SIT_LOW_CHAIR+info->chair.height);
+            player->SetStandState(UNIT_STAND_STATE_SIT_LOW_CHAIR+info->chair.height);
             return;
         }
         //big gun, its a spell/aura
@@ -954,6 +967,9 @@ void GameObject::Use(Unit* user)
 
                 // possible quest objective for active quests
                 player->CastedCreatureOrGO(info->id, GetGUID(), 0);
+
+                if (info->goober.eventId)
+                    sWorld.ScriptsStart(sEventScripts, info->goober.eventId, player, this);
             }
 
             // cast this spell later if provided
@@ -974,6 +990,9 @@ void GameObject::Use(Unit* user)
 
             if (info->camera.cinematicId)
                 player->SendCinematicStart(info->camera.cinematicId);
+
+            if (info->camera.eventID)
+                sWorld.ScriptsStart(sEventScripts, info->camera.eventID, player, this);
 
             return;
         }
@@ -996,11 +1015,12 @@ void GameObject::Use(Unit* user)
                     // 2) if skill == base_zone_skill => 5% chance
                     // 3) chance is linear dependence from (base_zone_skill-skill)
 
-                    uint32 subzone = GetAreaId();
+                    uint32 zone, subzone;
+                    GetZoneAndAreaId(zone,subzone);
 
                     int32 zone_skill = objmgr.GetFishingBaseSkillLevel( subzone );
                     if(!zone_skill)
-                        zone_skill = objmgr.GetFishingBaseSkillLevel( GetZoneId() );
+                        zone_skill = objmgr.GetFishingBaseSkillLevel( zone );
 
                     //provide error, no fishable zone or area should be 0
                     if(!zone_skill)

@@ -111,6 +111,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "delete",         SEC_CONSOLE,        true,  &ChatHandler::HandleCharacterDeleteCommand,     "", NULL },
         { "level",          SEC_ADMINISTRATOR,  true,  &ChatHandler::HandleCharacterLevelCommand,      "", NULL },
         { "rename",         SEC_GAMEMASTER,     true,  &ChatHandler::HandleCharacterRenameCommand,     "", NULL },
+        { "reputation",     SEC_GAMEMASTER,     true,  &ChatHandler::HandleCharacterReputationCommand, "", NULL },
         { NULL,             0,                  false, NULL,                                           "", NULL }
     };
 
@@ -395,6 +396,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "gameobject_scripts",          SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadGameObjectScriptsCommand,       "", NULL },
         { "item_enchantment_template",   SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadItemEnchantementsCommand,       "", NULL },
         { "item_loot_template",          SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadLootTemplatesItemCommand,       "", NULL },
+        { "item_required_target",        SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadItemRequiredTragetCommand,      "", NULL },
         { "mangos_string",               SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadMangosStringCommand,            "", NULL },
         { "npc_gossip",                  SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadNpcGossipCommand,               "", NULL },
         { "npc_option",                  SEC_ADMINISTRATOR, true,  &ChatHandler::HandleReloadNpcOptionCommand,               "", NULL },
@@ -1529,10 +1531,36 @@ void ChatHandler::extractOptFirstArg(char* args, char** arg1, char** arg2)
         *arg2 = p2;
 }
 
+char* ChatHandler::extractQuotedArg( char* args )
+{
+    if(!*args)
+        return NULL;
+
+    if(*args=='"')
+        return strtok(args+1, "\"");
+    else
+    {
+        char* space = strtok(args, "\"");
+        if(!space)
+            return false;
+        return strtok(NULL, "\"");
+    }
+}
+
 bool ChatHandler::needReportToTarget(Player* chr) const
 {
     Player* pl = m_session->GetPlayer();
     return pl != chr && pl->IsVisibleGloballyFor(chr);
+}
+
+LocaleConstant ChatHandler::GetSessionDbcLocale() const
+{
+    return m_session->GetSessionDbcLocale();
+}
+
+int ChatHandler::GetSessionDbLocaleIndex() const
+{
+    return m_session->GetSessionDbLocaleIndex();
 }
 
 const char *CliHandler::GetMangosString(int32 entry) const
@@ -1562,3 +1590,12 @@ bool CliHandler::needReportToTarget(Player* /*chr*/) const
     return true;
 }
 
+LocaleConstant CliHandler::GetSessionDbcLocale() const
+{
+    return sWorld.GetDefaultDbcLocale();
+}
+
+int CliHandler::GetSessionDbLocaleIndex() const
+{
+    return objmgr.GetDBCLocaleIndex();
+}
