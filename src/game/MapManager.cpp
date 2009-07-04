@@ -251,8 +251,6 @@ MapManager::Update(uint32 diff)
     if( !i_timer.Passed() )
         return;
 
-    ObjectAccessor::Instance().UpdatePlayers(i_timer.GetCurrent());
-
     uint32 i=0;
     MapMapType::iterator iter;
     std::vector<Map*> update_queue(i_maps.size());
