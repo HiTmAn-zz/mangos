@@ -21,7 +21,6 @@
 #include "Policies/SingletonImp.h"
 #include "Database/DatabaseEnv.h"
 #include "Log.h"
-#include "ObjectAccessor.h"
 #include "Transports.h"
 #include "GridDefines.h"
 #include "MapInstanced.h"
@@ -68,6 +67,12 @@ MapManager::Initialize()
     }
 
     InitMaxInstanceId();
+}
+
+void MapManager::InitializeVisibilityDistanceInfo()
+{
+    for(MapMapType::iterator iter=i_maps.begin(); iter != i_maps.end(); ++iter)
+        (*iter).second->InitVisibilityDistance();
 }
 
 // debugging code, should be deleted some day
@@ -194,7 +199,7 @@ bool MapManager::CanPlayerEnter(uint32 mapid, Player* player)
                     if(instance_map==mapid)
                         break;
 
-                    InstanceTemplate const* instance = objmgr.GetInstanceTemplate(instance_map);
+                    InstanceTemplate const* instance = ObjectMgr::GetInstanceTemplate(instance_map);
                     instance_map = instance ? instance->parent : 0;
                 }
                 while (instance_map);
@@ -256,7 +261,6 @@ MapManager::Update(uint32 diff)
         iter->second->Update(i_timer.GetCurrent());
     }
 
-    ObjectAccessor::Instance().Update(i_timer.GetCurrent());
     for (TransportSet::iterator iter = m_Transports.begin(); iter != m_Transports.end(); ++iter)
         (*iter)->Update(i_timer.GetCurrent());
 
@@ -282,7 +286,7 @@ bool MapManager::ExistMapAndVMap(uint32 mapid, float x,float y)
 bool MapManager::IsValidMAP(uint32 mapid)
 {
     MapEntry const* mEntry = sMapStore.LookupEntry(mapid);
-    return mEntry && (!mEntry->IsDungeon() || objmgr.GetInstanceTemplate(mapid));
+    return mEntry && (!mEntry->IsDungeon() || ObjectMgr::GetInstanceTemplate(mapid));
     // TODO: add check for battleground template
 }
 

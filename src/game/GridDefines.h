@@ -41,10 +41,10 @@ class Player;
 #define MIN_GRID_DELAY          (MINUTE*IN_MILISECONDS)
 #define MIN_MAP_UPDATE_DELAY    50
 
-#define MAX_NUMBER_OF_CELLS     8
+#define MAX_NUMBER_OF_CELLS     16
 #define SIZE_OF_GRID_CELL       (SIZE_OF_GRIDS/MAX_NUMBER_OF_CELLS)
 
-#define CENTER_GRID_CELL_ID     256
+#define CENTER_GRID_CELL_ID     (MAX_NUMBER_OF_CELLS*MAX_NUMBER_OF_GRIDS/2)
 #define CENTER_GRID_CELL_OFFSET (SIZE_OF_GRID_CELL/2)
 
 #define TOTAL_NUMBER_OF_CELLS_PER_MAP    (MAX_NUMBER_OF_GRIDS*MAX_NUMBER_OF_CELLS)
@@ -65,7 +65,7 @@ typedef GridRefManager<GameObject>      GameObjectMapType;
 typedef GridRefManager<Player>          PlayerMapType;
 
 typedef Grid<Player, AllWorldObjectTypes,AllGridObjectTypes> GridType;
-typedef NGrid<8, Player, AllWorldObjectTypes, AllGridObjectTypes> NGridType;
+typedef NGrid<MAX_NUMBER_OF_CELLS, Player, AllWorldObjectTypes, AllGridObjectTypes> NGridType;
 
 typedef TypeMapContainer<AllGridObjectTypes> GridTypeMapContainer;
 typedef TypeMapContainer<AllWorldObjectTypes> WorldTypeMapContainer;
@@ -86,26 +86,34 @@ struct MANGOS_DLL_DECL CoordPair
 
     void operator<<(const uint32 val)
     {
-        if( x_coord >= val )
+        if( x_coord > val )
             x_coord -= val;
+        else
+            x_coord = 0;
     }
 
     void operator>>(const uint32 val)
     {
         if( x_coord+val < LIMIT )
             x_coord += val;
+        else
+            x_coord = LIMIT - 1;
     }
 
     void operator-=(const uint32 val)
     {
-        if( y_coord >= val )
+        if( y_coord > val )
             y_coord -= val;
+        else
+            y_coord = 0;
     }
 
     void operator+=(const uint32 val)
     {
         if( y_coord+val < LIMIT )
             y_coord += val;
+        else
+            y_coord = LIMIT - 1;
     }
 
     uint32 x_coord;

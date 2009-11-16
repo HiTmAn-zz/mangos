@@ -31,7 +31,7 @@ static void AttemptJoin(Player* _player)
         return;
 
     //TODO: Guard Player Map
-    HashMapHolder<Player>::MapType const& players = ObjectAccessor::Instance().GetPlayers();
+    HashMapHolder<Player>::MapType const& players = sObjectAccessor.GetPlayers();
     for(HashMapHolder<Player>::MapType::const_iterator iter = players.begin(); iter != players.end(); ++iter)
     {
         Player *plr = iter->second;
@@ -58,7 +58,7 @@ static void AttemptJoin(Player* _player)
                 continue;
             }
 
-            objmgr.AddGroup(group);
+            sObjectMgr.AddGroup(group);
         }
 
         // stop at success join
@@ -87,7 +87,7 @@ static void AttemptAddMore(Player* _player)
         return;
 
     //TODO: Guard Player map
-    HashMapHolder<Player>::MapType const& players = ObjectAccessor::Instance().GetPlayers();
+    HashMapHolder<Player>::MapType const& players = sObjectAccessor.GetPlayers();
     for(HashMapHolder<Player>::MapType::const_iterator iter = players.begin(); iter != players.end(); ++iter)
     {
         Player *plr = iter->second;
@@ -113,7 +113,7 @@ static void AttemptAddMore(Player* _player)
                 return;                                     // can't create group (??)
             }
 
-            objmgr.AddGroup(group);
+            sObjectMgr.AddGroup(group);
         }
 
         // stop at join fail (full)
@@ -196,8 +196,6 @@ void WorldSession::HandleLfmClearOpcode( WorldPacket & /*recv_data */)
 
 void WorldSession::HandleSetLfmOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,4);
-
     sLog.outDebug("CMSG_SET_LOOKING_FOR_MORE");
     //recv_data.hexlike();
     uint32 temp, entry, type;
@@ -218,8 +216,6 @@ void WorldSession::HandleSetLfmOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleSetLfgCommentOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data, 1);
-
     sLog.outDebug("CMSG_SET_LFG_COMMENT");
     //recv_data.hexlike();
 
@@ -232,8 +228,6 @@ void WorldSession::HandleSetLfgCommentOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleLookingForGroup(WorldPacket& recv_data)
 {
-    CHECK_PACKET_SIZE(recv_data, 4+4+4);
-
     sLog.outDebug("MSG_LOOKING_FOR_GROUP");
     //recv_data.hexlike();
     uint32 type, entry, unk;
@@ -262,7 +256,7 @@ void WorldSession::SendLfgResult(uint32 type, uint32 entry, uint8 lfg_type)
     data << uint32(0);                                      // count again, strange, placeholder
 
     //TODO: Guard Player map
-    HashMapHolder<Player>::MapType const& players = ObjectAccessor::Instance().GetPlayers();
+    HashMapHolder<Player>::MapType const& players = sObjectAccessor.GetPlayers();
     for(HashMapHolder<Player>::MapType::const_iterator iter = players.begin(); iter != players.end(); ++iter)
     {
         Player *plr = iter->second;
@@ -315,8 +309,6 @@ void WorldSession::SendLfgResult(uint32 type, uint32 entry, uint8 lfg_type)
 
 void WorldSession::HandleSetLfgOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,4+4);
-
     sLog.outDebug("CMSG_SET_LOOKING_FOR_GROUP");
     //recv_data.hexlike();
     uint32 slot, temp, entry, type;

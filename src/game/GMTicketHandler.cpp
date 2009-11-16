@@ -50,7 +50,7 @@ void WorldSession::HandleGMTicketGetTicketOpcode( WorldPacket & /*recv_data*/ )
     data << (uint32)0;
     SendPacket( &data );
 
-    GMTicket* ticket = ticketmgr.GetGMTicket(GetPlayer()->GetGUIDLow());
+    GMTicket* ticket = sTicketMgr.GetGMTicket(GetPlayer()->GetGUIDLow());
     if(ticket)
         SendGMTicketGetTicket(0x06,ticket->GetText());
     else
@@ -59,12 +59,10 @@ void WorldSession::HandleGMTicketGetTicketOpcode( WorldPacket & /*recv_data*/ )
 
 void WorldSession::HandleGMTicketUpdateTextOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,1);
-
     std::string ticketText;
     recv_data >> ticketText;
 
-    if(GMTicket* ticket = ticketmgr.GetGMTicket(GetPlayer()->GetGUIDLow()))
+    if(GMTicket* ticket = sTicketMgr.GetGMTicket(GetPlayer()->GetGUIDLow()))
         ticket->SetText(ticketText.c_str());
     else
         sLog.outError("Ticket update: Player %s (GUID: %u) doesn't have active ticket", GetPlayer()->GetName(), GetPlayer()->GetGUIDLow());
@@ -72,7 +70,7 @@ void WorldSession::HandleGMTicketUpdateTextOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleGMTicketDeleteTicketOpcode( WorldPacket & /*recv_data*/ )
 {
-    ticketmgr.Delete(GetPlayer()->GetGUIDLow());
+    sTicketMgr.Delete(GetPlayer()->GetGUIDLow());
 
     WorldPacket data( SMSG_GMTICKET_DELETETICKET, 4 );
     data << uint32(9);
@@ -83,25 +81,20 @@ void WorldSession::HandleGMTicketDeleteTicketOpcode( WorldPacket & /*recv_data*/
 
 void WorldSession::HandleGMTicketCreateOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data, 4*4+1+2*4);
-
     uint32 map;
     float x, y, z;
     std::string ticketText = "";
-    uint32 unk1, unk2;
 
     recv_data >> map >> x >> y >> z;                        // last check 2.4.3
     recv_data >> ticketText;
 
-    // recheck
-    CHECK_PACKET_SIZE(recv_data,4*4+(ticketText.size()+1)+2*4);
+    recv_data.read_skip<uint32>();                          // unk1, 0
+    recv_data.read_skip<uint32>();                          // unk2, 1
+    recv_data.read_skip<uint32>();                          // unk3, 0
 
-    recv_data >> unk1 >> unk2;
-    // note: the packet might contain more data, but the exact structure of that is unknown
+    sLog.outDebug("TicketCreate: map %u, x %f, y %f, z %f, text %s", map, x, y, z, ticketText.c_str());
 
-    sLog.outDebug("TicketCreate: map %u, x %f, y %f, z %f, text %s, unk1 %u, unk2 %u", map, x, y, z, ticketText.c_str(), unk1, unk2);
-
-    if(ticketmgr.GetGMTicket(GetPlayer()->GetGUIDLow()))
+    if(sTicketMgr.GetGMTicket(GetPlayer()->GetGUIDLow()))
     {
         WorldPacket data( SMSG_GMTICKET_CREATE, 4 );
         data << uint32(1);
@@ -109,7 +102,7 @@ void WorldSession::HandleGMTicketCreateOpcode( WorldPacket & recv_data )
         return;
     }
 
-    ticketmgr.Create(_player->GetGUIDLow(), ticketText.c_str());
+    sTicketMgr.Create(_player->GetGUIDLow(), ticketText.c_str());
 
     WorldPacket data( SMSG_QUERY_TIME_RESPONSE, 4+4 );
     data << (uint32)time(NULL);
@@ -122,7 +115,7 @@ void WorldSession::HandleGMTicketCreateOpcode( WorldPacket & recv_data )
     DEBUG_LOG("update the ticket");
 
     //TODO: Guard player map
-    HashMapHolder<Player>::MapType &m = ObjectAccessor::Instance().GetPlayers();
+    HashMapHolder<Player>::MapType &m = sObjectAccessor.GetPlayers();
     for(HashMapHolder<Player>::MapType::const_iterator itr = m.begin(); itr != m.end(); ++itr)
     {
         if(itr->second->GetSession()->GetSecurity() >= SEC_GAMEMASTER && itr->second->isAcceptTickets())
@@ -141,7 +134,6 @@ void WorldSession::HandleGMTicketSystemStatusOpcode( WorldPacket & /*recv_data*/
 void WorldSession::HandleGMSurveySubmit( WorldPacket & recv_data)
 {
     // GM survey is shown after SMSG_GM_TICKET_STATUS_UPDATE with status = 3
-    CHECK_PACKET_SIZE(recv_data,4+4);
     uint32 x;
     recv_data >> x;                                         // answer range? (6 = 0-5?)
     sLog.outDebug("SURVEY: X = %u", x);
@@ -150,13 +142,11 @@ void WorldSession::HandleGMSurveySubmit( WorldPacket & recv_data)
     memset(result, 0, sizeof(result));
     for( int i = 0; i < 10; ++i)
     {
-        CHECK_PACKET_SIZE(recv_data,recv_data.rpos()+4);
         uint32 questionID;
         recv_data >> questionID;                            // GMSurveyQuestions.dbc
         if (!questionID)
             break;
 
-        CHECK_PACKET_SIZE(recv_data,recv_data.rpos()+1+1);
         uint8 value;
         std::string unk_text;
         recv_data >> value;                                 // answer
@@ -166,7 +156,6 @@ void WorldSession::HandleGMSurveySubmit( WorldPacket & recv_data)
         sLog.outDebug("SURVEY: ID %u, value %u, text %s", questionID, value, unk_text.c_str());
     }
 
-    CHECK_PACKET_SIZE(recv_data,recv_data.rpos()+1);
     std::string comment;
     recv_data >> comment;                                   // addional comment
     sLog.outDebug("SURVEY: comment %s", comment.c_str());

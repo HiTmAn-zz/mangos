@@ -38,6 +38,19 @@ pkgdata_DATA = \
 	045_8098_03_characters_character_pet.sql \
 	045_8098_04_characters_pet_spell.sql \
 	048_7382_01_mangos_creature_template.sql \
+	052_8072_01_characters_characters.sql \
+	055_8332_01_realmd_realmcharacters.sql \
+	058_7544_01_mangos_uptime.sql \
+	058_7546_02_realmd_uptime.sql \
+	061_7067_01_mangos_playercreateinfo_spell.sql \
+	061_7067_02_mangos_spell_learn_spell.sql \
+	061_7067_03_characters_character_spell.sql \
+	062_xxxx_01_mangos_spell_learn_spell.sql \
+	066_8402_01_characters_guild_eventlog.sql \
+	066_8402_02_characters_guild_bank_eventlog.sql \
+	066_8409_01_characters_guild.sql \
+	077_8728_01_realmd_account.sql \
+	078_8749_01_mangos_mail_loot_template.sql \
 	README
 
 ## Additional files to include when running 'make dist'
@@ -56,4 +69,17 @@ EXTRA_DIST = \
 	045_8098_03_characters_character_pet.sql \
 	045_8098_04_characters_pet_spell.sql \
 	048_7382_01_mangos_creature_template.sql \
+	052_8072_01_characters_characters.sql \
+	055_8332_01_realmd_realmcharacters.sql \
+	058_7544_01_mangos_uptime.sql \
+	058_7546_02_realmd_uptime.sql \
+	061_7067_01_mangos_playercreateinfo_spell.sql \
+	061_7067_02_mangos_spell_learn_spell.sql \
+	061_7067_03_characters_character_spell.sql \
+	062_xxxx_01_mangos_spell_learn_spell.sql \
+	066_8402_01_characters_guild_eventlog.sql \
+	066_8402_02_characters_guild_bank_eventlog.sql \
+	066_8409_01_characters_guild.sql \
+	077_8728_01_realmd_account.sql \
+	078_8749_01_mangos_mail_loot_template.sql \
 	README
