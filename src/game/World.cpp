@@ -1595,7 +1595,7 @@ void World::Update(uint32 diff)
 void World::ForceGameEventUpdate()
 {
     m_timers[WUPDATE_EVENTS].Reset();                   // to give time for Update() to be processed
-    uint32 nextGameEvent = gameeventmgr.Update();
+    uint32 nextGameEvent = sGameEventMgr.Update();
     m_timers[WUPDATE_EVENTS].SetInterval(nextGameEvent);
     m_timers[WUPDATE_EVENTS].Reset();
 }

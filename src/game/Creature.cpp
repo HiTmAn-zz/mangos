@@ -274,7 +274,7 @@ bool Creature::UpdateEntry(uint32 Entry, uint32 team, const CreatureData *data )
         setFaction(GetCreatureInfo()->faction_A);
 
     if(GetCreatureInfo()->npcflag & UNIT_NPC_FLAG_WORLDEVENT)
-        SetUInt32Value(UNIT_NPC_FLAGS,GetCreatureInfo()->npcflag | gameeventmgr.GetNPCFlag(this));
+        SetUInt32Value(UNIT_NPC_FLAGS,GetCreatureInfo()->npcflag | sGameEventMgr.GetNPCFlag(this));
     else
         SetUInt32Value(UNIT_NPC_FLAGS,GetCreatureInfo()->npcflag);
 
@@ -852,7 +852,7 @@ void Creature::sendPreparedGossip(Player* player)
         return;
 
     if(this->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_WORLDEVENT)) // if world event npc then
-        gameeventmgr.HandleWorldEventGossip(player, this);      // update world state with progress
+        sGameEventMgr.HandleWorldEventGossip(player, this);      // update world state with progress
 
     // in case empty gossip menu open quest menu if any
     if (!HasFlag(UNIT_NPC_FLAGS,UNIT_NPC_FLAG_GOSSIP) && !player->PlayerTalkClass->GetQuestMenu().Empty())
@@ -1016,7 +1016,7 @@ uint32 Creature::GetNpcTextId()
 {
     // don't cache / use cache in case it's a world event announcer
     if(this->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_WORLDEVENT))
-        if(uint32 textid = gameeventmgr.GetNpcTextId(m_DBTableGuid))
+        if(uint32 textid = sGameEventMgr.GetNpcTextId(m_DBTableGuid))
             return textid;
 
     if (!m_DBTableGuid)

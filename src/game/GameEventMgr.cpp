@@ -1056,7 +1056,7 @@ void GameEventMgr::UpdateEventNPCFlags(uint16 event_id)
     for(NPCFlagList::iterator itr = mGameEventNPCFlags[event_id].begin(); itr != mGameEventNPCFlags[event_id].end(); ++itr)
     {
         // get the creature data from the low guid to get the entry, to be able to find out the whole guid
-        if( CreatureData const* data = objmgr.GetCreatureData(itr->first) )
+        if( CreatureData const* data = sObjectMgr.GetCreatureData(itr->first) )
         {
             Creature * cr = HashMapHolder<Creature>::Find(MAKE_NEW_GUID(itr->first,data->id,HIGHGUID_UNIT));
             // if we found the creature, modify its npcflag
@@ -1374,7 +1374,7 @@ void GameEventMgr::UpdateEventQuests(uint16 event_id, bool Activate)
     }
     for (itr = mGameEventGameObjectQuests[event_id].begin();itr != mGameEventGameObjectQuests[event_id].end();++itr)
     {
-        QuestRelations &GameObjectQuestMap = objmgr.mGOQuestRelations;
+        QuestRelations &GameObjectQuestMap = sObjectMgr.mGOQuestRelations;
         if (Activate)                                       // Add the pair(id,quest) to the multimap
             GameObjectQuestMap.insert(QuestRelations::value_type(itr->first, itr->second));
         else
