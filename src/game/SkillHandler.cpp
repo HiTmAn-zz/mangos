@@ -23,13 +23,10 @@
 #include "Player.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
-#include "ObjectAccessor.h"
 #include "UpdateMask.h"
 
 void WorldSession::HandleLearnTalentOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,4+4);
-
     uint32 talent_id, requested_rank;
     recv_data >> talent_id >> requested_rank;
 
@@ -38,8 +35,6 @@ void WorldSession::HandleLearnTalentOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleTalentWipeConfirmOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
-
     sLog.outDetail("MSG_TALENT_WIPE_CONFIRM");
     uint64 guid;
     recv_data >> guid;
@@ -69,8 +64,6 @@ void WorldSession::HandleTalentWipeConfirmOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleUnlearnSkillOpcode(WorldPacket & recv_data)
 {
-    CHECK_PACKET_SIZE(recv_data,4);
-
     uint32 skill_id;
     recv_data >> skill_id;
     GetPlayer()->SetSkill(skill_id, 0, 0);

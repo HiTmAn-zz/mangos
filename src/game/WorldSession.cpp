@@ -41,7 +41,7 @@
 WorldSession::WorldSession(uint32 id, WorldSocket *sock, AccountTypes sec, uint8 expansion, time_t mute_time, LocaleConstant locale) :
 LookingForGroup_auto_join(false), LookingForGroup_auto_add(false), m_muteTime(mute_time),
 _player(NULL), m_Socket(sock),_security(sec), _accountId(id), m_expansion(expansion),
-m_sessionDbcLocale(sWorld.GetAvailableDbcLocale(locale)), m_sessionDbLocaleIndex(objmgr.GetIndexForLocale(locale)),
+m_sessionDbcLocale(sWorld.GetAvailableDbcLocale(locale)), m_sessionDbLocaleIndex(sObjectMgr.GetIndexForLocale(locale)),
 _logoutTime(0), m_inQueue(false), m_playerLoading(false), m_playerLogout(false), m_playerRecentlyLogout(false), m_latency(0)
 {
     if (sock)
@@ -67,16 +67,14 @@ WorldSession::~WorldSession()
     }
 
     ///- empty incoming packet queue
-    while(!_recvQueue.empty())
-    {
-        WorldPacket *packet = _recvQueue.next ();
+    WorldPacket* packet;
+    while(_recvQueue.next(packet))
         delete packet;
-    }
 }
 
 void WorldSession::SizeError(WorldPacket const& packet, uint32 size) const
 {
-    sLog.outError("Client (account %u) send packet %s (%u) with size %u but expected %u (attempt crash server?), skipped",
+    sLog.outError("Client (account %u) send packet %s (%u) with size " SIZEFMTD " but expected %u (attempt crash server?), skipped",
         GetAccountId(),LookupOpcodeName(packet.GetOpcode()),packet.GetOpcode(),packet.size(),size);
 }
 
@@ -139,7 +137,7 @@ void WorldSession::QueuePacket(WorldPacket* new_packet)
 }
 
 /// Logging helper for unexpected opcodes
-void WorldSession::logUnexpectedOpcode(WorldPacket* packet, const char *reason)
+void WorldSession::LogUnexpectedOpcode(WorldPacket* packet, const char *reason)
 {
     sLog.outError( "SESSION: received unexpected opcode %s (0x%.4X) %s",
         LookupOpcodeName(packet->GetOpcode()),
@@ -147,15 +145,23 @@ void WorldSession::logUnexpectedOpcode(WorldPacket* packet, const char *reason)
         reason);
 }
 
+/// Logging helper for unexpected opcodes
+void WorldSession::LogUnprocessedTail(WorldPacket *packet)
+{
+    sLog.outError( "SESSION: opcode %s (0x%.4X) have unprocessed tail data (read stop at %u from %u)",
+        LookupOpcodeName(packet->GetOpcode()),
+        packet->GetOpcode(),
+        packet->rpos(),packet->wpos());
+}
+
 /// Update the WorldSession (triggered by World update)
 bool WorldSession::Update(uint32 /*diff*/)
 {
     ///- Retrieve packets from the receive queue and call the appropriate handlers
     /// not proccess packets if socket already closed
-    while (!_recvQueue.empty() && m_Socket && !m_Socket->IsClosed ())
+    WorldPacket* packet;
+    while (_recvQueue.next(packet) && m_Socket && !m_Socket->IsClosed ())
     {
-        WorldPacket *packet = _recvQueue.next();
-
         /*#if 1
         sLog.outError( "MOEP: %s (0x%.4X)",
                         LookupOpcodeName(packet->GetOpcode()),
@@ -171,43 +177,83 @@ bool WorldSession::Update(uint32 /*diff*/)
         else
         {
             OpcodeHandler& opHandle = opcodeTable[packet->GetOpcode()];
-            switch (opHandle.status)
+            try
             {
-                case STATUS_LOGGEDIN:
-                    if(!_player)
-                    {
-                        // skip STATUS_LOGGEDIN opcode unexpected errors if player logout sometime ago - this can be network lag delayed packets
-                        if(!m_playerRecentlyLogout)
-                            logUnexpectedOpcode(packet, "the player has not logged in yet");
-                    }
-                    else if(_player->IsInWorld())
-                        (this->*opHandle.handler)(*packet);
-                    // lag can cause STATUS_LOGGEDIN opcodes to arrive after the player started a transfer
-                    break;
-                case STATUS_TRANSFER:
-                    if(!_player)
-                        logUnexpectedOpcode(packet, "the player has not logged in yet");
-                    else if(_player->IsInWorld())
-                        logUnexpectedOpcode(packet, "the player is still in world");
-                    else
-                        (this->*opHandle.handler)(*packet);
-                    break;
-                case STATUS_AUTHED:
-                    // prevent cheating with skip queue wait
-                    if(m_inQueue)
-                    {
-                        logUnexpectedOpcode(packet, "the player not pass queue yet");
+                switch (opHandle.status)
+                {
+                    case STATUS_LOGGEDIN:
+                        if(!_player)
+                        {
+                            // skip STATUS_LOGGEDIN opcode unexpected errors if player logout sometime ago - this can be network lag delayed packets
+                            if(!m_playerRecentlyLogout)
+                                LogUnexpectedOpcode(packet, "the player has not logged in yet");
+                        }
+                        else if(_player->IsInWorld())
+                        {
+                            (this->*opHandle.handler)(*packet);
+                            if (sLog.IsOutDebug() && packet->rpos() < packet->wpos())
+                                LogUnprocessedTail(packet);
+                        }
+                        // lag can cause STATUS_LOGGEDIN opcodes to arrive after the player started a transfer
                         break;
-                    }
+                    case STATUS_LOGGEDIN_OR_RECENTLY_LOGGOUT:
+                        if(!_player && !m_playerRecentlyLogout)
+                        {
+                            LogUnexpectedOpcode(packet, "the player has not logged in yet and not recently logout");
+                        }
+                        else
+                        {
+                            // not expected _player or must checked in packet hanlder
+                            (this->*opHandle.handler)(*packet);
+                            if (sLog.IsOutDebug() && packet->rpos() < packet->wpos())
+                                LogUnprocessedTail(packet);
+                        }
+                        break;
+                    case STATUS_TRANSFER:
+                        if(!_player)
+                            LogUnexpectedOpcode(packet, "the player has not logged in yet");
+                        else if(_player->IsInWorld())
+                            LogUnexpectedOpcode(packet, "the player is still in world");
+                        else
+                        {
+                            (this->*opHandle.handler)(*packet);
+                            if (sLog.IsOutDebug() && packet->rpos() < packet->wpos())
+                                LogUnprocessedTail(packet);
+                        }
+                        break;
+                    case STATUS_AUTHED:
+                        // prevent cheating with skip queue wait
+                        if(m_inQueue)
+                        {
+                            LogUnexpectedOpcode(packet, "the player not pass queue yet");
+                            break;
+                        }
 
-                    m_playerRecentlyLogout = false;
-                    (this->*opHandle.handler)(*packet);
-                    break;
-                case STATUS_NEVER:
-                    sLog.outError( "SESSION: received not allowed opcode %s (0x%.4X)",
-                        LookupOpcodeName(packet->GetOpcode()),
-                        packet->GetOpcode());
-                    break;
+                        // single from authed time opcodes send in to after logout time
+                        // and before other STATUS_LOGGEDIN_OR_RECENTLY_LOGGOUT opcodes.
+                        if (packet->GetOpcode() != CMSG_SET_ACTIVE_VOICE_CHANNEL)
+                            m_playerRecentlyLogout = false;
+
+                        (this->*opHandle.handler)(*packet);
+                        if (sLog.IsOutDebug() && packet->rpos() < packet->wpos())
+                            LogUnprocessedTail(packet);
+                        break;
+                    case STATUS_NEVER:
+                        sLog.outError( "SESSION: received not allowed opcode %s (0x%.4X)",
+                            LookupOpcodeName(packet->GetOpcode()),
+                            packet->GetOpcode());
+                        break;
+                }
+            }
+            catch(ByteBufferException &)
+            {
+                sLog.outError("WorldSession::Update ByteBufferException occured while parsing a packet (opcode: %u) from client %s, accountid=%i. Skipped packet.",
+                        packet->GetOpcode(), GetRemoteAddress().c_str(), GetAccountId());
+                if(sLog.IsOutDebug())
+                {
+                    sLog.outDebug("Dumping error causing packet:");
+                    packet->hexlike();
+                }
             }
         }
 
@@ -250,14 +296,14 @@ void WorldSession::LogoutPlayer(bool Save)
         //FIXME: logout must be delayed in case lost connection with client in time of combat
         if (_player->GetDeathTimer())
         {
-            _player->getHostilRefManager().deleteReferences();
+            _player->getHostileRefManager().deleteReferences();
             _player->BuildPlayerRepop();
             _player->RepopAtGraveyard();
         }
         else if (!_player->getAttackers().empty())
         {
             _player->CombatStop();
-            _player->getHostilRefManager().setOnlineOfflineState(false);
+            _player->getHostileRefManager().setOnlineOfflineState(false);
             _player->RemoveAllAurasOnDeath();
 
             // build set of player who attack _player or who have pet attacking of _player
@@ -320,13 +366,13 @@ void WorldSession::LogoutPlayer(bool Save)
         ///- Reset the online field in the account table
         // no point resetting online in character table here as Player::SaveToDB() will set it to 1 since player has not been removed from world at this stage
         //No SQL injection as AccountID is uint32
-        loginDatabase.PExecute("UPDATE account SET online = 0 WHERE id = '%u'", GetAccountId());
+        loginDatabase.PExecute("UPDATE account SET active_realm_id = 0 WHERE id = '%u'", GetAccountId());
 
         ///- If the player is in a guild, update the guild roster and broadcast a logout message to other guild members
-        Guild *guild = objmgr.GetGuildById(_player->GetGuildId());
+        Guild *guild = sObjectMgr.GetGuildById(_player->GetGuildId());
         if(guild)
         {
-            guild->LoadPlayerStatsByGuid(_player->GetGUID());
+            guild->SetMemberStats(_player->GetGUID());
             guild->UpdateLogoutTime(_player->GetGUID());
 
             WorldPacket data(SMSG_GUILD_EVENT, (1+1+12+8)); // name limited to 12 in character table.
@@ -386,7 +432,7 @@ void WorldSession::LogoutPlayer(bool Save)
         _player->CleanupsBeforeDelete();                    // do some cleanup before deleting to prevent crash at crossreferences to already deleted data
 
         delete _player;
-        _player = NULL;
+        SetPlayer(NULL);
 
         ///- Send the 'logout complete' packet to the client
         WorldPacket data( SMSG_LOGOUT_COMPLETE, 0 );
@@ -467,7 +513,7 @@ void WorldSession::SendNotification(int32 string_id,...)
 
 const char * WorldSession::GetMangosString( int32 entry ) const
 {
-    return objmgr.GetMangosString(entry,GetSessionDbLocaleIndex());
+    return sObjectMgr.GetMangosString(entry,GetSessionDbLocaleIndex());
 }
 
 void WorldSession::Handle_NULL( WorldPacket& recvPacket )
@@ -517,7 +563,6 @@ void WorldSession::SendAuthWaitQue(uint32 position)
 
 void WorldSession::ReadMovementInfo(WorldPacket &data, MovementInfo *mi)
 {
-    CHECK_PACKET_SIZE(data, 4+1+4+4+4+4+4);
     data >> mi->flags;
     data >> mi->unk1;
     data >> mi->time;
@@ -528,8 +573,6 @@ void WorldSession::ReadMovementInfo(WorldPacket &data, MovementInfo *mi)
 
     if(mi->HasMovementFlag(MOVEMENTFLAG_ONTRANSPORT))
     {
-        CHECK_PACKET_SIZE(data, data.rpos()+8+4+4+4+4+4);
-
         data >> mi->t_guid;
         data >> mi->t_x;
         data >> mi->t_y;
@@ -540,16 +583,13 @@ void WorldSession::ReadMovementInfo(WorldPacket &data, MovementInfo *mi)
 
     if(mi->HasMovementFlag(MovementFlags(MOVEMENTFLAG_SWIMMING | MOVEMENTFLAG_FLYING2)))
     {
-        CHECK_PACKET_SIZE(data, data.rpos()+4);
         data >> mi->s_pitch;
     }
 
-    CHECK_PACKET_SIZE(data, data.rpos()+4);
     data >> mi->fallTime;
 
     if(mi->HasMovementFlag(MOVEMENTFLAG_JUMPING))
     {
-        CHECK_PACKET_SIZE(data, data.rpos()+4+4+4+4);
         data >> mi->j_unk;
         data >> mi->j_sinAngle;
         data >> mi->j_cosAngle;
@@ -558,7 +598,6 @@ void WorldSession::ReadMovementInfo(WorldPacket &data, MovementInfo *mi)
 
     if(mi->HasMovementFlag(MOVEMENTFLAG_SPLINE))
     {
-        CHECK_PACKET_SIZE(data, data.rpos()+4);
         data >> mi->u_unk1;
     }
 }

@@ -47,7 +47,7 @@ void WaypointMovementGenerator<Creature>::LoadPath(Creature &c)
 {
     sLog.outDetail("LoadPath: loading waypoint path for creature %d,%d", c.GetGUIDLow(), c.GetDBTableGUIDLow());
 
-    i_path = WaypointMgr.GetPath(c.GetDBTableGUIDLow());
+    i_path = sWaypointMgr.GetPath(c.GetDBTableGUIDLow());
     if(!i_path)
     {
         sLog.outErrorDb("WaypointMovementGenerator::LoadPath: creature %s (Entry: %u GUID: %d) doesn't have waypoint path",
@@ -83,7 +83,7 @@ bool WaypointMovementGenerator<Creature>::Update(Creature &creature, const uint3
 
     // Waypoint movement can be switched on/off
     // This is quite handy for escort quests and other stuff
-    if(creature.hasUnitState(UNIT_STAT_ROOT | UNIT_STAT_STUNNED | UNIT_STAT_DISTRACTED))
+    if(creature.hasUnitState(UNIT_STAT_ROOT | UNIT_STAT_STUNNED | UNIT_STAT_DISTRACTED | UNIT_STAT_DIED))
         return true;
 
     // prevent a crash at empty waypoint path.
@@ -106,7 +106,7 @@ bool WaypointMovementGenerator<Creature>::Update(Creature &creature, const uint3
     {
         if( i_nextMoveTime.Passed()) // Timer has elapsed, meaning this part controlled it
         {
-            SetStopedByPlayer(false);
+            SetStoppedByPlayer(false);
             // Now we re-set destination to same node and start travel
             creature.addUnitState(UNIT_STAT_ROAMING);
             if (creature.canFly())
@@ -117,11 +117,11 @@ bool WaypointMovementGenerator<Creature>::Update(Creature &creature, const uint3
         }
         else // if( !i_nextMoveTime.Passed())
         { // unexpected end of timer && creature stopped && not at end of segment
-            if (!IsStopedByPlayer())
+            if (!IsStoppedByPlayer())
             {                                                   // Put 30 seconds delay
                 i_destinationHolder.IncreaseTravelTime(STOP_TIME_FOR_PLAYER);
                 i_nextMoveTime.Reset(STOP_TIME_FOR_PLAYER);
-                SetStopedByPlayer(true);                        // Mark we did it
+                SetStoppedByPlayer(true);                        // Mark we did it
             }
         }
         return true;    // Abort here this update
@@ -160,10 +160,10 @@ bool WaypointMovementGenerator<Creature>::Update(Creature &creature, const uint3
                     else
                         creature.Say(behavior->textid[0], 0, 0);
                 }
-
-                i_hasDone[idx] = true;
-                MovementInform(creature);
             }                                               // wpBehaviour found
+
+            i_hasDone[idx] = true;
+            MovementInform(creature);
         }                                                   // HasDone == false
     }                                                       // i_creature.IsStopped()
 
@@ -194,7 +194,7 @@ bool WaypointMovementGenerator<Creature>::Update(Creature &creature, const uint3
         else // If not stopped then stop it and set the reset of TimeTracker to waittime
         {
             creature.StopMoving();
-            SetStopedByPlayer(false);
+            SetStoppedByPlayer(false);
             i_nextMoveTime.Reset(i_path->at(i_currentNode).delay);
             ++i_currentNode;
             if( i_currentNode >= i_path->size() )
@@ -213,7 +213,7 @@ void WaypointMovementGenerator<Creature>::MovementInform(Creature &unit)
 //----------------------------------------------------//
 void FlightPathMovementGenerator::LoadPath(Player &)
 {
-    objmgr.GetTaxiPathNodes(i_pathId, i_path,i_mapIds);
+    sObjectMgr.GetTaxiPathNodes(i_pathId, i_path,i_mapIds);
 }
 
 uint32 FlightPathMovementGenerator::GetPathAtMapEnd() const
@@ -233,7 +233,7 @@ uint32 FlightPathMovementGenerator::GetPathAtMapEnd() const
 
 void FlightPathMovementGenerator::Initialize(Player &player)
 {
-    player.getHostilRefManager().setOnlineOfflineState(false);
+    player.getHostileRefManager().setOnlineOfflineState(false);
     player.addUnitState(UNIT_STAT_IN_FLIGHT);
     player.SetFlag(UNIT_FIELD_FLAGS,UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_TAXI_FLIGHT);
     LoadPath(player);
@@ -258,7 +258,7 @@ void FlightPathMovementGenerator::Finalize(Player & player)
 
     if(player.m_taxi.empty())
     {
-        player.getHostilRefManager().setOnlineOfflineState(true);
+        player.getHostileRefManager().setOnlineOfflineState(true);
         if(player.pvpInfo.inHostileArea)
             player.CastSpell(&player, 2479, true);
 

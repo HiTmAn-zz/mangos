@@ -30,19 +30,17 @@ void WorldSession::HandleInspectArenaTeamsOpcode(WorldPacket & recv_data)
 {
     sLog.outDebug("MSG_INSPECT_ARENA_TEAMS");
 
-    CHECK_PACKET_SIZE(recv_data, 8);
-
     uint64 guid;
     recv_data >> guid;
     sLog.outDebug("Inspect Arena stats (GUID: %u TypeId: %u)", GUID_LOPART(guid),GuidHigh2TypeId(GUID_HIPART(guid)));
 
-    if(Player *plr = objmgr.GetPlayer(guid))
+    if(Player *plr = sObjectMgr.GetPlayer(guid))
     {
         for (uint8 i = 0; i < MAX_ARENA_SLOT; ++i)
         {
             if(uint32 a_id = plr->GetArenaTeamId(i))
             {
-                if(ArenaTeam *at = objmgr.GetArenaTeamById(a_id))
+                if(ArenaTeam *at = sObjectMgr.GetArenaTeamById(a_id))
                     at->InspectStats(this, plr->GetGUID());
             }
         }
@@ -53,12 +51,10 @@ void WorldSession::HandleArenaTeamQueryOpcode(WorldPacket & recv_data)
 {
     sLog.outDebug( "WORLD: Received CMSG_ARENA_TEAM_QUERY" );
 
-    CHECK_PACKET_SIZE(recv_data, 4);
-
     uint32 ArenaTeamId;
     recv_data >> ArenaTeamId;
 
-    ArenaTeam *arenateam = objmgr.GetArenaTeamById(ArenaTeamId);
+    ArenaTeam *arenateam = sObjectMgr.GetArenaTeamById(ArenaTeamId);
     if(!arenateam)                                          // arena team not found
         return;
 
@@ -70,12 +66,10 @@ void WorldSession::HandleArenaTeamRosterOpcode(WorldPacket & recv_data)
 {
     sLog.outDebug( "WORLD: Received CMSG_ARENA_TEAM_ROSTER" );
 
-    CHECK_PACKET_SIZE(recv_data, 4);
-
     uint32 ArenaTeamId;                                     // arena team id
     recv_data >> ArenaTeamId;
 
-    ArenaTeam *arenateam = objmgr.GetArenaTeamById(ArenaTeamId);
+    ArenaTeam *arenateam = sObjectMgr.GetArenaTeamById(ArenaTeamId);
     if(!arenateam)
         return;
 
@@ -85,8 +79,6 @@ void WorldSession::HandleArenaTeamRosterOpcode(WorldPacket & recv_data)
 void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket & recv_data)
 {
     sLog.outDebug("CMSG_ARENA_TEAM_INVITE");
-
-    CHECK_PACKET_SIZE(recv_data, 4+1);
 
     uint32 ArenaTeamId;                                     // arena team id
     std::string Invitedname;
@@ -100,7 +92,7 @@ void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket & recv_data)
         if(!normalizePlayerName(Invitedname))
             return;
 
-        player = ObjectAccessor::Instance().FindPlayerByName(Invitedname.c_str());
+        player = ObjectAccessor::FindPlayerByName(Invitedname.c_str());
     }
 
     if(!player)
@@ -115,7 +107,7 @@ void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket & recv_data)
         return;
     }
 
-    ArenaTeam *arenateam = objmgr.GetArenaTeamById(ArenaTeamId);
+    ArenaTeam *arenateam = sObjectMgr.GetArenaTeamById(ArenaTeamId);
     if(!arenateam)
     {
         SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, "", "", ERR_ARENA_TEAM_PLAYER_NOT_IN_TEAM);
@@ -166,7 +158,7 @@ void WorldSession::HandleArenaTeamAcceptOpcode(WorldPacket & /*recv_data*/)
 {
     sLog.outDebug("CMSG_ARENA_TEAM_ACCEPT");                // empty opcode
 
-    ArenaTeam *at = objmgr.GetArenaTeamById(_player->GetArenaTeamIdInvited());
+    ArenaTeam *at = sObjectMgr.GetArenaTeamById(_player->GetArenaTeamIdInvited());
     if(!at)
         return;
 
@@ -176,7 +168,7 @@ void WorldSession::HandleArenaTeamAcceptOpcode(WorldPacket & /*recv_data*/)
         return;
     }
 
-    if (!sWorld.getConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GUILD) && _player->GetTeam() != objmgr.GetPlayerTeamByGUID(at->GetCaptain()))
+    if (!sWorld.getConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GUILD) && _player->GetTeam() != sObjectMgr.GetPlayerTeamByGUID(at->GetCaptain()))
     {
         SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S,"","",ERR_ARENA_TEAM_NOT_ALLIED);// not let enemies sign petition
         return;
@@ -205,12 +197,10 @@ void WorldSession::HandleArenaTeamLeaveOpcode(WorldPacket & recv_data)
 {
     sLog.outDebug("CMSG_ARENA_TEAM_LEAVE");
 
-    CHECK_PACKET_SIZE(recv_data, 4);
-
     uint32 ArenaTeamId;                                     // arena team id
     recv_data >> ArenaTeamId;
 
-    ArenaTeam *at = objmgr.GetArenaTeamById(ArenaTeamId);
+    ArenaTeam *at = sObjectMgr.GetArenaTeamById(ArenaTeamId);
     if(!at)
         return;
     if(_player->GetGUID() == at->GetCaptain() && at->GetMembersSize() > 1)
@@ -242,12 +232,10 @@ void WorldSession::HandleArenaTeamDisbandOpcode(WorldPacket & recv_data)
 {
     sLog.outDebug("CMSG_ARENA_TEAM_DISBAND");
 
-    CHECK_PACKET_SIZE(recv_data, 4);
-
     uint32 ArenaTeamId;                                     // arena team id
     recv_data >> ArenaTeamId;
 
-    ArenaTeam *at = objmgr.GetArenaTeamById(ArenaTeamId);
+    ArenaTeam *at = sObjectMgr.GetArenaTeamById(ArenaTeamId);
     if(!at)
         return;
 
@@ -265,15 +253,13 @@ void WorldSession::HandleArenaTeamRemoveOpcode(WorldPacket & recv_data)
 {
     sLog.outDebug("CMSG_ARENA_TEAM_REMOVE");
 
-    CHECK_PACKET_SIZE(recv_data, 4+1);
-
     uint32 ArenaTeamId;
     std::string name;
 
     recv_data >> ArenaTeamId;
     recv_data >> name;
 
-    ArenaTeam *at = objmgr.GetArenaTeamById(ArenaTeamId);
+    ArenaTeam *at = sObjectMgr.GetArenaTeamById(ArenaTeamId);
     if(!at)                                                 // arena team not found
         return;
 
@@ -311,15 +297,13 @@ void WorldSession::HandleArenaTeamLeaderOpcode(WorldPacket & recv_data)
 {
     sLog.outDebug("CMSG_ARENA_TEAM_LEADER");
 
-    CHECK_PACKET_SIZE(recv_data, 4+1);
-
     uint32 ArenaTeamId;
     std::string name;
 
     recv_data >> ArenaTeamId;
     recv_data >> name;
 
-    ArenaTeam *at = objmgr.GetArenaTeamById(ArenaTeamId);
+    ArenaTeam *at = sObjectMgr.GetArenaTeamById(ArenaTeamId);
     if(!at)                                                 // arena team not found
         return;
 

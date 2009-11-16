@@ -29,17 +29,12 @@
 #include "GossipDef.h"
 #include "UpdateMask.h"
 #include "ScriptCalls.h"
-#include "ObjectAccessor.h"
 #include "Creature.h"
 #include "Pet.h"
-#include "BattleGroundMgr.h"
-#include "BattleGround.h"
 #include "Guild.h"
 
 void WorldSession::HandleTabardVendorActivateOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
-
     uint64 guid;
     recv_data >> guid;
 
@@ -66,8 +61,6 @@ void WorldSession::SendTabardVendorActivate( uint64 guid )
 
 void WorldSession::HandleBankerActivateOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
-
     uint64 guid;
 
     sLog.outDebug(  "WORLD: Received CMSG_BANKER_ACTIVATE" );
@@ -97,8 +90,6 @@ void WorldSession::SendShowBank( uint64 guid )
 
 void WorldSession::HandleTrainerListOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
-
     uint64 guid;
 
     recv_data >> guid;
@@ -166,9 +157,9 @@ void WorldSession::SendTrainerList( uint64 guid, const std::string& strTitle )
 
         ++count;
 
-        bool primary_prof_first_rank = spellmgr.IsPrimaryProfessionFirstRankSpell(tSpell->spell);
+        bool primary_prof_first_rank = sSpellMgr.IsPrimaryProfessionFirstRankSpell(tSpell->spell);
 
-        SpellChainNode const* chain_node = spellmgr.GetSpellChainNode(tSpell->spell);
+        SpellChainNode const* chain_node = sSpellMgr.GetSpellChainNode(tSpell->spell);
 
         data << uint32(tSpell->spell);
         data << uint8(_player->GetTrainerSpellState(tSpell));
@@ -192,8 +183,6 @@ void WorldSession::SendTrainerList( uint64 guid, const std::string& strTitle )
 
 void WorldSession::HandleTrainerBuySpellOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8+4);
-
     uint64 guid;
     uint32 spellId = 0;
 
@@ -255,8 +244,6 @@ void WorldSession::HandleTrainerBuySpellOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleGossipHelloOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
-
     sLog.outDebug(  "WORLD: Received CMSG_GOSSIP_HELLO" );
 
     uint64 guid;
@@ -278,17 +265,8 @@ void WorldSession::HandleGossipHelloOpcode( WorldPacket & recv_data )
         unit->StopMoving();
     }
 
-    // If spiritguide, no need for gossip menu, just put player into resurrect queue
     if (unit->isSpiritGuide())
-    {
-        BattleGround *bg = _player->GetBattleGround();
-        if(bg)
-        {
-            bg->AddPlayerToResurrectQueue(unit->GetGUID(), _player->GetGUID());
-            sBattleGroundMgr.SendAreaSpiritHealerQueryOpcode(_player, bg, unit->GetGUID());
-            return;
-        }
-    }
+        unit->SendAreaSpiritHealerQueryOpcode(_player);
 
     if(!Script->GossipHello( _player, unit ))
     {
@@ -300,8 +278,6 @@ void WorldSession::HandleGossipHelloOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleGossipSelectOptionOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8+4+4);
-
     sLog.outDebug("WORLD: CMSG_GOSSIP_SELECT_OPTION");
 
     uint32 option;
@@ -313,8 +289,6 @@ void WorldSession::HandleGossipSelectOptionOpcode( WorldPacket & recv_data )
 
     if(_player->PlayerTalkClass->GossipOptionCoded( option ))
     {
-        // recheck
-        CHECK_PACKET_SIZE(recv_data,8+4+1);
         sLog.outBasic("reading string");
         recv_data >> code;
         sLog.outBasic("string read: %s", code.c_str());
@@ -345,8 +319,6 @@ void WorldSession::HandleGossipSelectOptionOpcode( WorldPacket & recv_data )
 
 void WorldSession::HandleSpiritHealerActivateOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
-
     sLog.outDebug("WORLD: CMSG_SPIRIT_HEALER_ACTIVATE");
 
     uint64 guid;
@@ -377,7 +349,7 @@ void WorldSession::SendSpiritResurrect()
     WorldSafeLocsEntry const *corpseGrave = NULL;
     Corpse *corpse = _player->GetCorpse();
     if(corpse)
-        corpseGrave = objmgr.GetClosestGraveYard(
+        corpseGrave = sObjectMgr.GetClosestGraveYard(
             corpse->GetPositionX(), corpse->GetPositionY(), corpse->GetPositionZ(), corpse->GetMapId(), _player->GetTeam() );
 
     // now can spawn bones
@@ -386,26 +358,24 @@ void WorldSession::SendSpiritResurrect()
     // teleport to nearest from corpse graveyard, if different from nearest to player ghost
     if(corpseGrave)
     {
-        WorldSafeLocsEntry const *ghostGrave = objmgr.GetClosestGraveYard(
+        WorldSafeLocsEntry const *ghostGrave = sObjectMgr.GetClosestGraveYard(
             _player->GetPositionX(), _player->GetPositionY(), _player->GetPositionZ(), _player->GetMapId(), _player->GetTeam() );
 
         if(corpseGrave != ghostGrave)
             _player->TeleportTo(corpseGrave->map_id, corpseGrave->x, corpseGrave->y, corpseGrave->z, _player->GetOrientation());
         // or update at original position
         else
-            ObjectAccessor::UpdateVisibilityForPlayer(_player);
+            _player->UpdateVisibilityForPlayer();
     }
     // or update at original position
     else
-        ObjectAccessor::UpdateVisibilityForPlayer(_player);
+        _player->UpdateVisibilityForPlayer();
 
     _player->SaveToDB();
 }
 
 void WorldSession::HandleBinderActivateOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
-
     uint64 npcGUID;
     recv_data >> npcGUID;
 
@@ -477,8 +447,6 @@ void WorldSession::SendBindPoint(Creature *npc)
 
 void WorldSession::HandleListStabledPetsOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data,8);
-
     sLog.outDebug("WORLD: Recv MSG_LIST_STABLED_PETS");
     uint64 npcGUID;
 
@@ -555,8 +523,6 @@ void WorldSession::SendStablePet(uint64 guid )
 
 void WorldSession::HandleStablePet( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data, 8);
-
     sLog.outDebug("WORLD: Recv CMSG_STABLE_PET");
     uint64 npcGUID;
 
@@ -578,11 +544,10 @@ void WorldSession::HandleStablePet( WorldPacket & recv_data )
 
     Pet *pet = _player->GetPet();
 
-    WorldPacket data(SMSG_STABLE_RESULT, 200);              // guess size
-
     // can't place in stable dead pet
     if(!pet||!pet->isAlive()||pet->getPetType()!=HUNTER_PET)
     {
+        WorldPacket data(SMSG_STABLE_RESULT, 1);
         data << uint8(0x06);
         SendPacket(&data);
         return;
@@ -611,6 +576,7 @@ void WorldSession::HandleStablePet( WorldPacket & recv_data )
         delete result;
     }
 
+    WorldPacket data(SMSG_STABLE_RESULT, 1);
     if( free_slot > 0 && free_slot <= GetPlayer()->m_stableSlots)
     {
         _player->RemovePet(pet,PetSaveMode(free_slot));
@@ -624,8 +590,6 @@ void WorldSession::HandleStablePet( WorldPacket & recv_data )
 
 void WorldSession::HandleUnstablePet( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data, 8+4);
-
     sLog.outDebug("WORLD: Recv CMSG_UNSTABLE_PET.");
     uint64 npcGUID;
     uint32 petnumber;
@@ -643,11 +607,40 @@ void WorldSession::HandleUnstablePet( WorldPacket & recv_data )
     if(GetPlayer()->hasUnitState(UNIT_STAT_DIED))
         GetPlayer()->RemoveSpellsCausingAura(SPELL_AURA_FEIGN_DEATH);
 
-    WorldPacket data(SMSG_STABLE_RESULT, 200);              // guess size
+    uint32 creature_id = 0;
+
+    {
+        QueryResult *result = CharacterDatabase.PQuery("SELECT entry FROM character_pet WHERE owner = '%u' AND id = '%u' AND slot >='%u' AND slot <= '%u'",
+            _player->GetGUIDLow(),petnumber,PET_SAVE_FIRST_STABLE_SLOT,PET_SAVE_LAST_STABLE_SLOT);
+        if(result)
+        {
+            Field *fields = result->Fetch();
+            creature_id = fields[0].GetUInt32();
+            delete result;
+        }
+    }
+
+    if(!creature_id)
+    {
+        WorldPacket data(SMSG_STABLE_RESULT, 1);
+        data << uint8(0x06);
+        SendPacket(&data);
+        return;
+    }
+
+    CreatureInfo const* creatureInfo = ObjectMgr::GetCreatureTemplate(creature_id);
+    if(!creatureInfo || !creatureInfo->isTameable())
+    {
+        WorldPacket data(SMSG_STABLE_RESULT, 1);
+        data << uint8(0x06);
+        SendPacket(&data);
+        return;
+    }
 
     Pet* pet = _player->GetPet();
     if(pet && pet->isAlive())
     {
+        WorldPacket data(SMSG_STABLE_RESULT, 1);
         data << uint8(0x06);
         SendPacket(&data);
         return;
@@ -657,35 +650,24 @@ void WorldSession::HandleUnstablePet( WorldPacket & recv_data )
     if(pet)
         _player->RemovePet(pet,PET_SAVE_AS_DELETED);
 
-    Pet *newpet = NULL;
-
-    QueryResult *result = CharacterDatabase.PQuery("SELECT entry FROM character_pet WHERE owner = '%u' AND id = '%u' AND slot >='%u' AND slot <= '%u'",
-        _player->GetGUIDLow(),petnumber,PET_SAVE_FIRST_STABLE_SLOT,PET_SAVE_LAST_STABLE_SLOT);
-    if(result)
+    Pet *newpet = new Pet(HUNTER_PET);
+    if(!newpet->LoadPetFromDB(_player,creature_id,petnumber))
     {
-        Field *fields = result->Fetch();
-        uint32 petentry = fields[0].GetUInt32();
-
-        newpet = new Pet(HUNTER_PET);
-        if(!newpet->LoadPetFromDB(_player,petentry,petnumber))
-        {
-            delete newpet;
-            newpet = NULL;
-        }
-        delete result;
+        delete newpet;
+        newpet = NULL;
+        WorldPacket data(SMSG_STABLE_RESULT, 1);
+        data << uint8(0x06);
+        SendPacket(&data);
+        return;
     }
 
-    if(newpet)
-        data << uint8(0x09);
-    else
-        data << uint8(0x06);
+    WorldPacket data(SMSG_STABLE_RESULT, 1);
+    data << uint8(0x09);
     SendPacket(&data);
 }
 
 void WorldSession::HandleBuyStableSlot( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data, 8);
-
     sLog.outDebug("WORLD: Recv CMSG_BUY_STABLE_SLOT.");
     uint64 npcGUID;
 
@@ -729,8 +711,6 @@ void WorldSession::HandleStableRevivePet( WorldPacket &/* recv_data */)
 
 void WorldSession::HandleStableSwapPet( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data, 8+4);
-
     sLog.outDebug("WORLD: Recv CMSG_STABLE_SWAP_PET.");
     uint64 npcGUID;
     uint32 pet_number;
@@ -763,16 +743,33 @@ void WorldSession::HandleStableSwapPet( WorldPacket & recv_data )
 
     Field *fields = result->Fetch();
 
-    uint32 slot     = fields[0].GetUInt32();
-    uint32 petentry = fields[1].GetUInt32();
+    uint32 slot        = fields[0].GetUInt32();
+    uint32 creature_id = fields[1].GetUInt32();
     delete result;
+
+    if(!creature_id)
+    {
+        WorldPacket data(SMSG_STABLE_RESULT, 1);
+        data << uint8(0x06);
+        SendPacket(&data);
+        return;
+    }
+
+    CreatureInfo const* creatureInfo = ObjectMgr::GetCreatureTemplate(creature_id);
+    if(!creatureInfo || !creatureInfo->isTameable())
+    {
+        WorldPacket data(SMSG_STABLE_RESULT, 1);
+        data << uint8(0x06);
+        SendPacket(&data);
+        return;
+    }
 
     // move alive pet to slot or delete dead pet
     _player->RemovePet(pet,pet->isAlive() ? PetSaveMode(slot) : PET_SAVE_AS_DELETED);
 
     // summon unstabled pet
     Pet *newpet = new Pet;
-    if(!newpet->LoadPetFromDB(_player,petentry,pet_number))
+    if(!newpet->LoadPetFromDB(_player,creature_id,pet_number))
     {
         delete newpet;
         data << uint8(0x06);
@@ -785,8 +782,6 @@ void WorldSession::HandleStableSwapPet( WorldPacket & recv_data )
 
 void WorldSession::HandleRepairItemOpcode( WorldPacket & recv_data )
 {
-    CHECK_PACKET_SIZE(recv_data, 8+8+1);
-
     sLog.outDebug("WORLD: CMSG_REPAIR_ITEM");
 
     uint64 npcGUID, itemGUID;
@@ -829,7 +824,7 @@ void WorldSession::HandleRepairItemOpcode( WorldPacket & recv_data )
         uint32 GuildId = _player->GetGuildId();
         if (!GuildId)
             return;
-        Guild *pGuild = objmgr.GetGuildById(GuildId);
+        Guild *pGuild = sObjectMgr.GetGuildById(GuildId);
         if (!pGuild)
             return;
         pGuild->LogBankEvent(GUILD_BANK_LOG_REPAIR_MONEY, 0, _player->GetGUIDLow(), TotalCost);

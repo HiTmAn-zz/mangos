@@ -69,6 +69,7 @@ libmangosgame_a_SOURCES = \
 	Channel.cpp \
 	Channel.h \
 	ChannelHandler.cpp \
+	ChannelMgr.cpp \
 	ChannelMgr.h \
 	CharacterHandler.cpp \
 	Chat.cpp \
@@ -134,8 +135,8 @@ libmangosgame_a_SOURCES = \
 	GuildHandler.cpp \
 	HomeMovementGenerator.cpp \
 	HomeMovementGenerator.h \
-	HostilRefManager.cpp \
-	HostilRefManager.h \
+	HostileRefManager.cpp \
+	HostileRefManager.h \
 	IdleMovementGenerator.cpp \
 	IdleMovementGenerator.h \
 	InstanceData.cpp \
@@ -204,8 +205,8 @@ libmangosgame_a_SOURCES = \
 	PlayerDump.h \
 	PointMovementGenerator.cpp \
 	PointMovementGenerator.h \
-	PoolHandler.cpp \
-	PoolHandler.h \
+	PoolManager.cpp \
+	PoolManager.h \
 	QueryHandler.cpp \
 	QuestDef.cpp \
 	QuestDef.h \
@@ -267,8 +268,6 @@ libmangosgame_a_SOURCES = \
 	Weather.h \
 	World.cpp \
 	World.h \
-	WorldLog.cpp \
-	WorldLog.h \
 	WorldSession.cpp \
 	WorldSession.h \
 	WorldSocket.cpp \
@@ -283,7 +282,12 @@ libmangosgame_a_SOURCES = \
 	GroupRefManager.h
 
 ## Link against shared library
-libmangosgame_a_LIBADD = ../shared/libmangosshared.a ../shared/Auth/libmangosauth.a ../shared/Config/libmangosconfig.a ../shared/Database/libmangosdatabase.a ../shared/vmap/libmangosvmaps.a
+libmangosgame_a_LIBADD = \
+	../shared/libmangosshared.a \
+	../shared/Auth/libmangosauth.a \
+	../shared/Config/libmangosconfig.a \
+	../shared/Database/libmangosdatabase.a \
+	../shared/vmap/libmangosvmaps.a
 
 ## Additional files to include when running 'make dist'
 #  Precompiled Headers for WIN
