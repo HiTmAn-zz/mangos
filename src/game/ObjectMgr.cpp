@@ -6275,6 +6275,8 @@ void ObjectMgr::LoadCreatureQuestRelations()
 {
     LoadQuestRelationsHelper(mCreatureQuestRelations,"creature_questrelation");
     
+    sGameEventMgr.ReloadEventQuests();
+
     for(QuestRelations::iterator itr = mCreatureQuestRelations.begin(); itr != mCreatureQuestRelations.end(); ++itr)
     {
         CreatureInfo const* cInfo = GetCreatureTemplate(itr->first);
