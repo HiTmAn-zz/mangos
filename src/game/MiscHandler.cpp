@@ -641,8 +641,6 @@ void WorldSession::HandleReclaimCorpseOpcode(WorldPacket &recv_data)
 
     // spawn bones
     GetPlayer()->SpawnCorpseBones();
-
-    GetPlayer()->SaveToDB();
 }
 
 void WorldSession::HandleResurrectResponseOpcode(WorldPacket & recv_data)
@@ -666,8 +664,7 @@ void WorldSession::HandleResurrectResponseOpcode(WorldPacket & recv_data)
     if(!GetPlayer()->isRessurectRequestedBy(guid))
         return;
 
-    GetPlayer()->ResurectUsingRequestData();
-    GetPlayer()->SaveToDB();
+    GetPlayer()->ResurectUsingRequestData();                // will call spawncorpsebones
 }
 
 void WorldSession::HandleAreaTriggerOpcode(WorldPacket & recv_data)
@@ -803,8 +800,10 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket & recv_data)
         else if(at->requiredItem2 && !GetPlayer()->HasItemCount(at->requiredItem2, 1))
             missingItem = at->requiredItem2;
 
+        bool isRegularTargetMap = GetPlayer()->GetDifficulty() == REGULAR_DIFFICULTY;
+
         uint32 missingKey = 0;
-        if(GetPlayer()->GetDifficulty() == DIFFICULTY_HEROIC)
+        if(!isRegularTargetMap)
         {
             if(at->heroicKey)
             {
@@ -826,7 +825,7 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket & recv_data)
             if(missingItem)
                 SendAreaTriggerMessage(GetMangosString(LANG_LEVEL_MINREQUIRED_AND_ITEM), at->requiredLevel, ObjectMgr::GetItemPrototype(missingItem)->Name1);
             else if(missingKey)
-                GetPlayer()->SendTransferAborted(at->target_mapId, TRANSFER_ABORT_DIFFICULTY, DIFFICULTY_HEROIC);
+                GetPlayer()->SendTransferAborted(at->target_mapId, TRANSFER_ABORT_DIFFICULTY, DUNGEON_DIFFICULTY_HEROIC);
             else if(missingQuest)
                 SendAreaTriggerMessage(at->requiredFailedText.c_str());
             else if(missingLevel)
@@ -1337,7 +1336,7 @@ void WorldSession::HandleSetDungeonDifficultyOpcode( WorldPacket & recv_data )
     if(mode == _player->GetDifficulty())
         return;
 
-    if(mode > DIFFICULTY_HEROIC)
+    if(mode >= MAX_DIFFICULTY)
     {
         sLog.outError("WorldSession::HandleSetDungeonDifficultyOpcode: player %d sent an invalid instance mode %d!", _player->GetGUIDLow(), mode);
         return;
