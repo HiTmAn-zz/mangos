@@ -2443,3 +2443,51 @@ bool ChatHandler::HandleModifyDrunkCommand(const char* args)
 
     return true;
 }
+
+bool ChatHandler::HandleVIPMountCommand(const char* args)
+{
+    Player* _player = m_session->GetPlayer();
+
+    std::string argstr = (char*)args;
+
+    if(_player->isInFlight() || _player->isInCombat() || _player->isDead() || _player->IsMounted() || _player->IsInWater())
+    {
+        SendSysMessage("Das geht jetzt nicht!");
+        return true;
+    }
+    if (argstr == "pferd")
+    {
+        _player->CastSpell(_player, 470, false);
+        return true;
+    } else if (argstr == "tiger")
+    {
+        _player->CastSpell(_player, 10789, false);
+        return true;
+    } else if (argstr == "robo")
+    {
+        _player->CastSpell(_player, 10969, false);
+        return true;
+    } else if (argstr == "widder")
+    {
+        _player->CastSpell(_player, 6899, false);
+        return true;
+    } else if (argstr == "wolf")
+    {
+        _player->CastSpell(_player, 581, false);
+        return true;
+    } else if (argstr == "skelett")
+    {
+        _player->CastSpell(_player, 17462, false);
+        return true;
+    } else if (argstr == "raptor")
+    {
+        _player->CastSpell(_player, 8395, false);
+        return true;
+    } else if (argstr == "kodo")
+    {
+        _player->CastSpell(_player, 18989, false);
+        return true;
+    }
+    SendSysMessage("Folgende Befehle gibt es: pferd, tiger, robo, widder, wolf, skelett, raptor, kodo!");
+    return true;
+}
