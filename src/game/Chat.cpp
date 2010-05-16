@@ -666,7 +666,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "repairitems",    SEC_GAMEMASTER,     true,  &ChatHandler::HandleRepairitemsCommand,         "", NULL },
         { "waterwalk",      SEC_GAMEMASTER,     false, &ChatHandler::HandleWaterwalkCommand,           "", NULL },
         { "quit",           SEC_CONSOLE,        true,  &ChatHandler::HandleQuitCommand,                "", NULL },
-
+        { "mount",          SEC_MODERATOR,      false, &ChatHandler::HandleVIPMountCommand,            "", NULL },
         { NULL,             0,                  false, NULL,                                           "", NULL }
     };
 
